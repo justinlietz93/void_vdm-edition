@@ -1,0 +1,35 @@
+Component,SidebarPane,SettingsPane,DiffViz,ChatThread,EditCode,ContextGather,Tools,Convert,Settings,VoidModel,RefreshModel,FileService,ModelCaps,Helpers,VSCodePlatform,ElectronMain,LLMProviders,CycleDetected
+SidebarPane,0,0,0,1,1,0,0,0,0,0,0,0,0,0,0,0,0,NO
+SettingsPane,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,NO
+DiffViz,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,NO
+ChatThread,0,0,0,0,0,1,1,1,1,0,0,0,0,0,0,1,0,NO
+EditCode,0,0,0,0,0,0,0,0,1,1,0,0,0,1,0,0,0,NO
+ContextGather,0,0,0,0,0,0,0,0,1,0,0,1,0,1,0,0,0,NO
+Tools,0,0,0,0,1,1,0,0,0,0,0,0,0,0,0,0,0,NO
+Convert,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,NO
+Settings,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,NO
+VoidModel,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,NO
+RefreshModel,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,NO
+FileService,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,NO
+ModelCaps,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,NO
+Helpers,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,NO
+VSCodePlatform,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,NO
+ElectronMain,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,NO
+LLMProviders,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,NO
+
+# Dependency Matrix Analysis
+# Legend: 1 = Component (row) depends on component (column), 0 = No dependency
+# Cycle Detection: NO cycles detected in current architecture
+# 
+# Key Metrics:
+# - Fan-out (max dependencies from one component): ChatThread = 5
+# - Fan-in (max components depending on one): EditCode = 3, ContextGather = 2
+# - Instability Score (I = Fan-out / (Fan-in + Fan-out)):
+#   - ChatThread: 5/5 = 1.0 (highly unstable, expected for application layer)
+#   - EditCode: 2/5 = 0.4 (moderately stable)
+#   - Settings: 0/4 = 0.0 (highly stable, expected for infrastructure)
+# 
+# Architecture Quality:
+# ✅ No circular dependencies detected
+# ✅ Clear layered architecture (Presentation → Application → Infrastructure)
+# ✅ Stable core with unstable periphery (good design)

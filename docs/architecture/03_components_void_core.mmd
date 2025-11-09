@@ -1,0 +1,113 @@
+%% C4 Component Diagram - Void Core Container
+%% Detailed view of Void-specific components
+%% Last Updated: 2025-11-09
+%% Commit: 7c1f1947e3ea704ba30609c343863d16d5c91185
+
+graph TB
+    %% External Containers
+    ElectronMain[Electron Main Process<br/>LLM Communication]
+    EditorModels[Editor & Models<br/>Monaco, Text Models]
+    VSCodeWorkbench[VS Code Workbench<br/>Extension Host]
+    
+    subgraph VoidCore["Void Core Container"]
+        direction TB
+        
+        %% Presentation Layer
+        subgraph PresentationLayer["Presentation Layer"]
+            SidebarPane[Sidebar Pane<br/><br/>React Component<br/>---<br/>Chat UI<br/>Message display<br/>User interactions]
+            
+            SettingsPane[Settings Pane<br/><br/>React Component<br/>---<br/>Provider config<br/>Model selection<br/>Feature toggles]
+            
+            DiffViz[Diff Visualizer<br/><br/>TypeScript<br/>---<br/>Red/green diffs<br/>Zone decorations<br/>Inline previews]
+        end
+        
+        %% Application Layer
+        subgraph ApplicationLayer["Application Layer"]
+            ChatThread[Chat Thread Service<br/><br/>TypeScript Service<br/>---<br/>Conversation mgmt<br/>Message history<br/>Thread state]
+            
+            EditCode[Edit Code Service<br/><br/>TypeScript Service<br/>---<br/>Apply operations<br/>Diff zones<br/>Fast/Slow modes<br/>User approval]
+            
+            ContextGather[Context Gathering<br/><br/>TypeScript Service<br/>---<br/>Workspace scan<br/>File analysis<br/>Priority ranking<br/>Token budgeting]
+            
+            Tools[Tools Service<br/><br/>TypeScript Service<br/>---<br/>Tool definitions<br/>Execution logic<br/>Result parsing]
+            
+            Convert[Message Converter<br/><br/>TypeScript Service<br/>---<br/>Format for LLMs<br/>Context injection<br/>System prompts]
+        end
+        
+        %% Domain Layer
+        subgraph DomainLayer["Domain Layer"]
+            ModelCaps[Model Capabilities<br/><br/>TypeScript<br/>---<br/>Provider specs<br/>Token limits<br/>Feature support]
+            
+            Helpers[Helper Utilities<br/><br/>TypeScript<br/>---<br/>Code extraction<br/>Diff computation<br/>Language detection]
+        end
+        
+        %% Infrastructure Layer
+        subgraph InfrastructureLayer["Infrastructure Layer"]
+            Settings[Settings Service<br/><br/>TypeScript Service<br/>---<br/>Provider config<br/>Model selection<br/>Local storage]
+            
+            VoidModel[Void Model Service<br/><br/>TypeScript Service<br/>---<br/>Model lifecycle<br/>URI management<br/>File operations]
+            
+            RefreshModel[Refresh Model Service<br/><br/>TypeScript Service<br/>---<br/>Dynamic model lists<br/>Provider polling]
+            
+            FileService[File Service<br/><br/>TypeScript Service<br/>---<br/>File filtering<br/>Workspace queries]
+        end
+    end
+    
+    %% User Interactions (from UI)
+    SidebarPane -->|User sends message| ChatThread
+    SidebarPane -->|Apply button| EditCode
+    SettingsPane -->|Configure| Settings
+    
+    %% Presentation to Application
+    SidebarPane -->|Display messages| ChatThread
+    SidebarPane -->|Show diffs| EditCode
+    DiffViz -->|Render zones| EditCode
+    
+    %% Application Layer Internal
+    ChatThread -->|Request context| ContextGather
+    ChatThread -->|Format messages| Convert
+    ChatThread -->|Execute tools| Tools
+    
+    EditCode -->|Parse changes| Helpers
+    EditCode -->|Compute diffs| Helpers
+    EditCode -->|Update models| VoidModel
+    
+    ContextGather -->|Query files| FileService
+    ContextGather -->|Analyze code| Helpers
+    
+    Convert -->|Check capabilities| ModelCaps
+    
+    Tools -->|Trigger edits| EditCode
+    Tools -->|Gather context| ContextGather
+    
+    %% Application to Infrastructure
+    ChatThread -->|Get settings| Settings
+    EditCode -->|Access settings| Settings
+    ContextGather -->|Get config| Settings
+    
+    EditCode -->|Write changes| VoidModel
+    
+    %% Infrastructure External Communication
+    Settings -->|Load/save| VSCodeWorkbench
+    
+    VoidModel -->|Text operations| EditorModels
+    
+    ChatThread -->|IPC: Send prompts| ElectronMain
+    ElectronMain -.->|IPC: Stream responses| ChatThread
+    
+    FileService -->|File queries| VSCodeWorkbench
+    
+    RefreshModel -->|IPC: Poll providers| ElectronMain
+    
+    %% Styling
+    classDef presentationStyle fill:#E74C3C,stroke:#C0392B,stroke-width:2px,color:#fff
+    classDef applicationStyle fill:#3498DB,stroke:#2874A6,stroke-width:2px,color:#fff
+    classDef domainStyle fill:#F39C12,stroke:#D68910,stroke-width:2px,color:#fff
+    classDef infrastructureStyle fill:#27AE60,stroke:#1E8449,stroke-width:2px,color:#fff
+    classDef externalStyle fill:#95A5A6,stroke:#7F8C8D,stroke-width:2px,color:#fff
+    
+    class SidebarPane,SettingsPane,DiffViz presentationStyle
+    class ChatThread,EditCode,ContextGather,Tools,Convert applicationStyle
+    class ModelCaps,Helpers domainStyle
+    class Settings,VoidModel,RefreshModel,FileService infrastructureStyle
+    class ElectronMain,EditorModels,VSCodeWorkbench externalStyle

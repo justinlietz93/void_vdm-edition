@@ -1,0 +1,113 @@
+%% LLM Message Pipeline - Comprehensive Analysis
+%% Last Updated: 2025-11-09
+
+graph TB
+    subgraph "1. User Input Stage"
+        A[User types in Sidebar]
+        A --> B{Message Valid?}
+        B -->|Yes| C[Create Message Object]
+        B -->|No| D[Show Validation Error]
+        C --> E[Add to Thread]
+    end
+    
+    subgraph "2. Context Gathering Stage"
+        E --> F[Trigger Context Gathering]
+        F --> G[Scan Workspace Files]
+        G --> H[Filter by Relevance]
+        H --> I[Extract Symbols]
+        I --> J[Prioritize by Score]
+        J --> K[Enforce Token Limit]
+        K --> L[Format Context]
+    end
+    
+    subgraph "3. Message Formatting Stage"
+        L --> M[Get Provider & Model]
+        M --> N[Convert Thread to Provider Format]
+        N --> O[Inject Context]
+        O --> P[Add System Prompt]
+        P --> Q[Add Tool Definitions]
+        Q --> R[Build Final Request]
+    end
+    
+    subgraph "4. IPC Communication Stage"
+        R --> S[Send to Electron Main via IPC]
+        S --> T[Main Process Receives]
+        T --> U[Validate API Key]
+        U --> V{Key Valid?}
+        V -->|No| W[Return Error]
+        V -->|Yes| X[Proceed to Provider]
+    end
+    
+    subgraph "5. Provider API Call Stage"
+        X --> Y[Instantiate Provider Client]
+        Y --> Z[Build API Request]
+        Z --> AA[Set Headers & Auth]
+        AA --> AB[POST to Provider API]
+        AB --> AC{Streaming?}
+        AC -->|No| AD[Wait for Full Response]
+        AC -->|Yes| AE[Establish SSE Connection]
+    end
+    
+    subgraph "6. Response Streaming Stage"
+        AE --> AF[Receive Token Delta]
+        AF --> AG[Parse JSON]
+        AG --> AH{Tool Call?}
+        AH -->|Yes| AI[Buffer Tool Call]
+        AH -->|No| AJ[Send Token via IPC]
+        AJ --> AK[Renderer Receives Token]
+        AK --> AL[Update Message Object]
+        AL --> AM[Trigger UI Re-render]
+        AM --> AF
+        
+        AI --> AN[Execute Tool]
+        AN --> AO[Get Tool Result]
+        AO --> AP[Send Result Back to LLM]
+        AP --> AB
+    end
+    
+    subgraph "7. Completion Stage"
+        AF --> AQ{Stream Done?}
+        AQ -->|No| AF
+        AQ -->|Yes| AR[Send Completion Event]
+        AR --> AS[Mark Message Complete]
+        AS --> AT[Save Thread to Storage]
+        AT --> AU[Update UI State]
+        AU --> AV[Show Complete Message]
+    end
+    
+    %% Error Paths
+    W --> AW[Display Error to User]
+    AB --> AX{Request Failed?}
+    AX -->|Yes| AY[Log Error]
+    AY --> AZ{Retry?}
+    AZ -->|Yes| AB
+    AZ -->|No| AW
+    
+    %% Styling
+    classDef inputStyle fill:#E74C3C,stroke:#C0392B,stroke-width:2px,color:#fff
+    classDef processStyle fill:#3498DB,stroke:#2874A6,stroke-width:2px,color:#fff
+    classDef decisionStyle fill:#F39C12,stroke:#D68910,stroke-width:2px,color:#fff
+    classDef errorStyle fill:#E74C3C,stroke:#C0392B,stroke-width:2px,color:#fff
+    classDef successStyle fill:#27AE60,stroke:#1E8449,stroke-width:2px,color:#fff
+    
+    class A,C,E inputStyle
+    class F,G,H,I,J,K,L,M,N,O,P,Q,R,S,T,U,X,Y,Z,AA,AB,AE,AF,AG,AJ,AK,AL,AM,AR,AS,AT,AU processStyle
+    class B,V,AC,AH,AQ,AX,AZ decisionStyle
+    class D,W,AW,AY errorStyle
+    class AV successStyle
+
+---
+
+%% Activity Diagram - Artifacts at Each Stage
+
+graph LR
+    Stage1[1. User Input] --> |Message Object| Stage2[2. Context Gathering]
+    Stage2 --> |Context Object| Stage3[3. Message Formatting]
+    Stage3 --> |LLM Request| Stage4[4. IPC Communication]
+    Stage4 --> |IPC Message| Stage5[5. Provider API Call]
+    Stage5 --> |HTTP Request| Stage6[6. Response Streaming]
+    Stage6 --> |Token Deltas| Stage7[7. Completion]
+    Stage7 --> |Complete Message| End[UI Display]
+    
+    classDef stageStyle fill:#3498DB,stroke:#2874A6,stroke-width:2px,color:#fff
+    class Stage1,Stage2,Stage3,Stage4,Stage5,Stage6,Stage7,End stageStyle
