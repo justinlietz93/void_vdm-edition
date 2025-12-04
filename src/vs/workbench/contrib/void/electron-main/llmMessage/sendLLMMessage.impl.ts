@@ -17,7 +17,7 @@ import {
 } from '../../common/voidSettingsTypes.js';
 import { getModelCapabilities } from '../../common/modelCapabilities.js';
 import { generateUuid } from '../../../../../base/common/uuid.js';
-import { cruxGetModelsForProvider, cruxPostChat, cruxPostKeys, CruxChatRequest } from './cruxBridge.js';
+import { cruxGetModelsForProvider, cruxPostKeys, cruxStreamChat, CruxChatRequest } from './cruxBridge.js';
 
 type InternalCommonMessageParams = {
 	onText: OnText;
@@ -201,24 +201,45 @@ const sendChatViaCrux = async (params: SendChatParams_Internal) => {
 		extra: { feature: 'Chat' },
 	};
 
-	// Crux chat is currently non-streaming; expose a no-op aborter to satisfy callers.
-	_setAborter(() => { /* no-op abort */ });
-
 	try {
-		const payload = await cruxPostChat(request);
-		const resp: any = (payload as any).response;
+		const controller = new AbortController();
+		_setAborter(() => controller.abort());
 
-		const fullText = textFromCruxResponse(resp);
-		const toolCall = toolCallFromCruxParts(resp?.parts || []);
+		let fullText = '';
+		let toolCall: RawToolCallObj | null = null;
+		let finalSeen = false;
+		let errored = false;
 
-		if (!fullText && !toolCall) {
+		await cruxStreamChat(
+			request,
+			(chunk) => {
+				if (chunk.error) {
+					errored = true;
+					onError({ message: chunk.error, fullError: null });
+					controller.abort();
+					return;
+				}
+				const delta = typeof chunk.delta === 'string' ? chunk.delta : '';
+				if (delta) {
+					fullText += delta;
+					onText({ fullText, fullReasoning: '', toolCall: toolCall ?? undefined });
+				}
+				if (chunk.finish || chunk.type === 'final') {
+					finalSeen = true;
+				}
+			},
+			controller.signal,
+		);
+
+		if (errored) return;
+
+		if (!finalSeen && !fullText && !toolCall) {
 			onError({ message: 'Void: Response from Crux /api/chat was empty.', fullError: null });
 			return;
 		}
 
 		const toolCallObj = toolCall ? { toolCall } : {};
 
-		onText({ fullText, fullReasoning: '', toolCall: toolCall ?? undefined });
 		onFinalMessage({
 			fullText,
 			fullReasoning: '',

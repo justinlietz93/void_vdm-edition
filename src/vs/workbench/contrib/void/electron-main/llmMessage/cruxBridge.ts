@@ -51,6 +51,13 @@ export interface CruxChatStreamChunk {
 	payload: unknown;
 }
 
+export type CruxChatStreamDelta = {
+	type: 'delta' | 'final' | 'error';
+	delta?: string | null;
+	structured?: any;
+	finish?: boolean;
+	error?: string | null;
+};
 /**
  * Normalized model descriptor as returned by Crux `/api/models` (current FastAPI service).
  * This is intentionally generic; specific fields can be promoted into
@@ -156,6 +163,65 @@ export async function cruxPostChat(request: CruxChatRequest): Promise<any> {
 	}
 
 	return data;
+}
+
+/**
+ * Streaming chat bridge (NDJSON).
+ *
+ * Streams chunks from Crux `/api/chat/stream` and calls `onChunk` for each parsed
+ * JSON line. Throws on HTTP errors or parse failures.
+ */
+export async function cruxStreamChat(
+	request: CruxChatRequest,
+	onChunk: (chunk: CruxChatStreamDelta) => void,
+	signal?: AbortSignal,
+): Promise<void> {
+	const baseUrl = getCruxBaseUrl();
+	const url = `${baseUrl}/api/chat/stream`;
+
+	const response = await fetch(url, {
+		method: 'POST',
+		headers: {
+			'Content-Type': 'application/json',
+		},
+		body: JSON.stringify(request),
+		signal,
+	});
+
+	if (!response.ok) {
+		const text = await response.text().catch(() => '');
+		throw new Error(
+			`[CruxBridge] Crux /api/chat/stream returned ${response.status} ${response.statusText}: ${text || 'no body'}`,
+		);
+	}
+
+	if (!response.body) {
+		throw new Error(`[CruxBridge] /api/chat/stream returned no body (${response.status})`);
+	}
+
+	let buffer = '';
+	for await (const chunk of response.body as any) {
+		const text = typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8');
+		buffer += text;
+		const parts = buffer.split('\n');
+		buffer = parts.pop() ?? '';
+		for (const line of parts) {
+			const trimmed = line.trim();
+			if (!trimmed) continue;
+			try {
+				onChunk(JSON.parse(trimmed));
+			} catch (err) {
+				throw new Error(`[CruxBridge] Failed to parse chat stream chunk: ${err}`);
+			}
+		}
+	}
+	if (buffer.trim()) {
+		try {
+			onChunk(JSON.parse(buffer.trim()));
+		} catch (err) {
+			throw new Error(`[CruxBridge] Failed to parse trailing chat stream chunk: ${err}`);
+		}
+	}
 }
 
 /**

@@ -13,3 +13,4 @@ Log of the work done to move the Void IDE provider layer to the embedded Crux mo
 - Tightened list model typing in `sendLLMMessage.impl.ts` to satisfy TypeScript after the Crux swap.
 - Added key sync from IDE provider settings to Crux (`cruxPostKeys`) before chat/list calls; caches per env var to avoid repeat writes.
 - Removed the unused `llmMessage/providers/openAIProvider.ts` stub and cleaned obsolete “not implemented” references in `cruxBridge.ts` now that all routing is Crux-backed.
+- Added Crux streaming endpoint (`/api/chat/stream`) and IDE streaming client wiring via `cruxStreamChat` so chat now streams NDJSON from Crux.
