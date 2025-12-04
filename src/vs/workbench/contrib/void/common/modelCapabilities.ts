@@ -242,8 +242,8 @@ type VoidStaticProviderInfo = { // doesn't change (not stateful)
 
 
 const defaultModelOptions = {
-	contextWindow: 4_096,
-	reservedOutputTokenSpace: 4_096,
+	contextWindow: 128_000,
+	reservedOutputTokenSpace: 8_192,
 	cost: { input: 0, output: 0 },
 	downloadable: false,
 	supportsSystemMessage: false,
@@ -1507,6 +1507,26 @@ export const getModelCapabilities = (
 	const result = modelOptionsFallback(modelName)
 	if (result) {
 		return { ...result, ...overrides, modelName: result.modelName, isUnrecognizedModel: false };
+	}
+
+	// Generic fallback for unknown OpenAI chat models (e.g. future GPT-* or ChatGPT IDs).
+	// This prevents new OpenAI models (like gpt-5.1-*) from being treated as tiny-context,
+	// text-only models with no system messages or native tools.
+	if (providerName === 'openAI') {
+		const genericLower = lowercaseModelName;
+		if (genericLower.startsWith('gpt-') || genericLower.startsWith('o') || genericLower.includes('chatgpt')) {
+			const generic: VoidStaticModelInfo = {
+				contextWindow: 1_000_000,
+				reservedOutputTokenSpace: 32_768,
+				cost: { input: 0, output: 0 },
+				downloadable: false,
+				supportsSystemMessage: 'developer-role',
+				specialToolFormat: 'openai-style',
+				supportsFIM: false,
+				reasoningCapabilities: false,
+			};
+			return { ...generic, ...overrides, modelName, recognizedModelName: modelName, isUnrecognizedModel: false };
+		}
 	}
 
 	return { modelName, ...defaultModelOptions, ...overrides, isUnrecognizedModel: true };

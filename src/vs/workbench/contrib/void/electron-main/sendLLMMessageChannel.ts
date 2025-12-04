@@ -34,12 +34,16 @@ export class LLMMessageChannel implements IServerChannel {
 			success: new Emitter<EventModelListOnSuccessParams<OllamaModelResponse>>(),
 			error: new Emitter<EventModelListOnErrorParams<OllamaModelResponse>>(),
 		},
+		openai: {
+			success: new Emitter<EventModelListOnSuccessParams<OpenaiCompatibleModelResponse>>(),
+			error: new Emitter<EventModelListOnErrorParams<OpenaiCompatibleModelResponse>>(),
+		},
 		openaiCompat: {
 			success: new Emitter<EventModelListOnSuccessParams<OpenaiCompatibleModelResponse>>(),
 			error: new Emitter<EventModelListOnErrorParams<OpenaiCompatibleModelResponse>>(),
 		},
 	} satisfies {
-		[providerName in 'ollama' | 'openaiCompat']: {
+		[providerName in 'ollama' | 'openai' | 'openaiCompat']: {
 			success: Emitter<EventModelListOnSuccessParams<any>>,
 			error: Emitter<EventModelListOnErrorParams<any>>,
 		}
@@ -59,6 +63,8 @@ export class LLMMessageChannel implements IServerChannel {
 		// list
 		else if (event === 'onSuccess_list_ollama') return this.listEmitters.ollama.success.event;
 		else if (event === 'onError_list_ollama') return this.listEmitters.ollama.error.event;
+		else if (event === 'onSuccess_list_openAI') return this.listEmitters.openai.success.event;
+		else if (event === 'onError_list_openAI') return this.listEmitters.openai.error.event;
 		else if (event === 'onSuccess_list_openAICompatible') return this.listEmitters.openaiCompat.success.event;
 		else if (event === 'onError_list_openAICompatible') return this.listEmitters.openaiCompat.error.event;
 
@@ -76,6 +82,9 @@ export class LLMMessageChannel implements IServerChannel {
 			}
 			else if (command === 'ollamaList') {
 				this._callOllamaList(params)
+			}
+			else if (command === 'openAIList') {
+				this._callOpenAIList(params)
 			}
 			else if (command === 'openAICompatibleList') {
 				this._callOpenAICompatibleList(params)
@@ -138,6 +147,23 @@ export class LLMMessageChannel implements IServerChannel {
 		sendLLMMessageToProviderImplementation.ollama.list(mainThreadParams)
 	}
 
+	_callOpenAIList = (params: MainModelListParams<OpenaiCompatibleModelResponse>) => {
+		const { requestId } = params
+		console.log('[Void][LLMMessageChannel] _callOpenAIList invoked', { requestId })
+		const emitters = this.listEmitters.openai
+		const mainThreadParams: ModelListParams<OpenaiCompatibleModelResponse> = {
+			...params,
+			onSuccess: (p) => { emitters.success.fire({ requestId, ...p }); },
+			onError: (p) => { emitters.error.fire({ requestId, ...p }); },
+		}
+		const impl = sendLLMMessageToProviderImplementation.openAI.list;
+		if (!impl) {
+			console.log('[Void][LLMMessageChannel] OpenAI list impl missing')
+			throw new Error('OpenAI list implementation is not configured.');
+		}
+		impl(mainThreadParams)
+	}
+
 	_callOpenAICompatibleList = (params: MainModelListParams<OpenaiCompatibleModelResponse>) => {
 		const { requestId, providerName } = params
 		const emitters = this.listEmitters.openaiCompat
@@ -146,7 +172,11 @@ export class LLMMessageChannel implements IServerChannel {
 			onSuccess: (p) => { emitters.success.fire({ requestId, ...p }); },
 			onError: (p) => { emitters.error.fire({ requestId, ...p }); },
 		}
-		sendLLMMessageToProviderImplementation[providerName].list(mainThreadParams)
+		const impl = sendLLMMessageToProviderImplementation[providerName].list;
+		if (!impl) {
+			throw new Error(`List implementation is not configured for provider "${providerName}".`);
+		}
+		impl(mainThreadParams)
 	}
 
 

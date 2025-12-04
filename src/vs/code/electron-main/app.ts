@@ -123,16 +123,17 @@ import { IWebContentExtractorService } from '../../platform/webContentExtractor/
 import { NativeWebContentExtractorService } from '../../platform/webContentExtractor/electron-main/webContentExtractorService.js';
 import ErrorTelemetry from '../../platform/telemetry/electron-main/errorTelemetry.js';
 
-// in theory this is not allowed
-// ignore the eslint errors below
-import { IMetricsService } from '../../workbench/contrib/void/common/metricsService.js';
-import { IVoidUpdateService } from '../../workbench/contrib/void/common/voidUpdateService.js';
-import { MetricsMainService } from '../../workbench/contrib/void/electron-main/metricsMainService.js';
-import { VoidMainUpdateService } from '../../workbench/contrib/void/electron-main/voidUpdateMainService.js';
-import { LLMMessageChannel } from '../../workbench/contrib/void/electron-main/sendLLMMessageChannel.js';
-import { VoidSCMService } from '../../workbench/contrib/void/electron-main/voidSCMMainService.js';
-import { IVoidSCMService } from '../../workbench/contrib/void/common/voidSCMTypes.js';
-import { MCPChannel } from '../../workbench/contrib/void/electron-main/mcpChannel.js';
+ // in theory this is not allowed
+ // ignore the eslint errors below
+ import { IMetricsService } from '../../workbench/contrib/void/common/metricsService.js';
+ import { IVoidUpdateService } from '../../workbench/contrib/void/common/voidUpdateService.js';
+ import { MetricsMainService } from '../../workbench/contrib/void/electron-main/metricsMainService.js';
+ import { VoidMainUpdateService } from '../../workbench/contrib/void/electron-main/voidUpdateMainService.js';
+ import { LLMMessageChannel } from '../../workbench/contrib/void/electron-main/sendLLMMessageChannel.js';
+ import { VoidSCMService } from '../../workbench/contrib/void/electron-main/voidSCMMainService.js';
+ import { IVoidSCMService } from '../../workbench/contrib/void/common/voidSCMTypes.js';
+ import { MCPChannel } from '../../workbench/contrib/void/electron-main/mcpChannel.js';
+ import { CruxSupervisor } from '../../workbench/contrib/void/electron-main/cruxSupervisor.js';
 /**
  * The main VS Code application. There will only ever be one instance,
  * even if the user starts many instances (e.g. from the command line).
@@ -147,6 +148,7 @@ export class CodeApplication extends Disposable {
 	private windowsMainService: IWindowsMainService | undefined;
 	private auxiliaryWindowsMainService: IAuxiliaryWindowsMainService | undefined;
 	private nativeHostMainService: INativeHostMainService | undefined;
+	private cruxSupervisor: CruxSupervisor | undefined;
 
 	constructor(
 		private readonly mainProcessNodeIpcServer: NodeIPCServer,
@@ -533,6 +535,17 @@ export class CodeApplication extends Disposable {
 		this.logService.debug('Starting VS Code');
 		this.logService.debug(`from: ${this.environmentMainService.appRoot}`);
 		this.logService.debug('args:', this.environmentMainService.args);
+
+		// Ensure Crux provider service is running (managed by IDE unless overridden by env)
+		try {
+			if (!this.cruxSupervisor) {
+				this.cruxSupervisor = new CruxSupervisor(this.environmentMainService, this.logService, this.lifecycleMainService);
+			}
+
+			await this.cruxSupervisor.startIfNeeded();
+		} catch (error) {
+			this.logService.error('[CruxSupervisor] Failed to ensure Crux is running', error);
+		}
 
 		// Make sure we associate the program with the app user model id
 		// This will help Windows to associate the running program with

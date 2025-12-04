@@ -47,6 +47,7 @@ const refreshBasedOn: { [k in RefreshableProviderName]: (keyof SettingsOfProvide
 	ollama: ['_didFillInProviderSettings', 'endpoint'],
 	vLLM: ['_didFillInProviderSettings', 'endpoint'],
 	lmStudio: ['_didFillInProviderSettings', 'endpoint'],
+	openAI: ['_didFillInProviderSettings', 'apiKey'],
 	// openAICompatible: ['_didFillInProviderSettings', 'endpoint', 'apiKey'],
 }
 const REFRESH_INTERVAL = 5_000
@@ -93,11 +94,14 @@ export class RefreshModelService extends Disposable implements IRefreshModelServ
 			disposables.forEach(d => d.dispose())
 			disposables.clear()
 
-			if (!voidSettingsService.state.globalSettings.autoRefreshModels) return
+			const autoRefresh = voidSettingsService.state.globalSettings.autoRefreshModels
+			console.log('[Void][RefreshModelService] initializeAutoPollingAndOnChange', { autoRefresh })
+			if (!autoRefresh) return
 
 			for (const providerName of refreshableProviderNames) {
 
 				// const { '_didFillInProviderSettings': enabled } = this.voidSettingsService.state.settingsOfProvider[providerName]
+				console.log('[Void][RefreshModelService] auto startRefreshingModels', { providerName })
 				this.startRefreshingModels(providerName, autoOptions)
 
 				// every time providerName.enabled changes, refresh models too, like a useEffect
@@ -144,6 +148,7 @@ export class RefreshModelService extends Disposable implements IRefreshModelServ
 		ollama: { state: 'init', timeoutId: null },
 		vLLM: { state: 'init', timeoutId: null },
 		lmStudio: { state: 'init', timeoutId: null },
+		openAI: { state: 'init', timeoutId: null },
 	}
 
 
@@ -161,12 +166,17 @@ export class RefreshModelService extends Disposable implements IRefreshModelServ
 				this._setTimeoutId(providerName, timeoutId)
 			}
 		}
-		const listFn = providerName === 'ollama' ? this.llmMessageService.ollamaList
-			: this.llmMessageService.openAICompatibleList
+		const listFn =
+			providerName === 'ollama'
+				? this.llmMessageService.ollamaList
+				: providerName === 'openAI'
+					? this.llmMessageService.openAIList
+					: this.llmMessageService.openAICompatibleList
 
 		listFn({
 			providerName,
 			onSuccess: ({ models }) => {
+				console.log('[Void][RefreshModelService] list success', { providerName, modelCount: models.length })
 				// set the models to the detected models
 				this.voidSettingsService.setAutodetectedModels(
 					providerName,
@@ -174,6 +184,7 @@ export class RefreshModelService extends Disposable implements IRefreshModelServ
 						if (providerName === 'ollama') return (model as OllamaModelResponse).name;
 						else if (providerName === 'vLLM') return (model as OpenaiCompatibleModelResponse).id;
 						else if (providerName === 'lmStudio') return (model as OpenaiCompatibleModelResponse).id;
+						else if (providerName === 'openAI') return (model as OpenaiCompatibleModelResponse).id;
 						else throw new Error('refreshMode fn: unknown provider', providerName);
 					}),
 					{ enableProviderOnSuccess: options.enableProviderOnSuccess, hideRefresh: options.doNotFire }
@@ -185,6 +196,7 @@ export class RefreshModelService extends Disposable implements IRefreshModelServ
 				autoPoll()
 			},
 			onError: ({ error }) => {
+				console.log('[Void][RefreshModelService] list error', { providerName, error })
 				this._setRefreshState(providerName, 'error', options)
 				autoPoll()
 			}

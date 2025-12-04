@@ -71,30 +71,70 @@ openai on developer system message - https://cdn.openai.com/spec/model-spec-2024
 
 const prepareMessages_openai_tools = (messages: SimpleLLMMessage[]): AnthropicOrOpenAILLMMessage[] => {
 
-	const newMessages: OpenAILLMChatMessage[] = [];
+	const newMessages: OpenAILLMChatMessage[] = []
+
+	// Track the index of the last assistant message we have seen so far.
+	// All OpenAI tool calls must reference a preceding assistant with tool_calls,
+	// so we always attach tools to the most recent assistant.
+	let lastAssistantIndex: number | undefined = undefined
 
 	for (let i = 0; i < messages.length; i += 1) {
 		const currMsg = messages[i]
 
+		// Non-tool messages are passed through directly, and we remember the
+		// index of the latest assistant so tools can attach to it.
 		if (currMsg.role !== 'tool') {
-			newMessages.push(currMsg)
+			const copied = currMsg as unknown as OpenAILLMChatMessage
+			newMessages.push(copied)
+			if (copied.role === 'assistant') {
+				lastAssistantIndex = newMessages.length - 1
+			}
 			continue
 		}
 
-		// edit previous assistant message to have called the tool
-		const prevMsg = 0 <= i - 1 && i - 1 <= newMessages.length ? newMessages[i - 1] : undefined
-		if (prevMsg?.role === 'assistant') {
-			prevMsg.tool_calls = [{
-				type: 'function',
-				id: currMsg.id,
-				function: {
-					name: currMsg.name,
-					arguments: JSON.stringify(currMsg.rawParams)
-				}
-			}]
+		// If there is no preceding assistant message (e.g. a very old tool
+		// result after truncation), we cannot represent this as a valid
+		// OpenAI "tool" role. Fall back to inlining the tool output into a
+		// user message so the content is still available without violating
+		// the tools schema.
+		if (lastAssistantIndex === undefined) {
+			const fallbackText = `[tool ${currMsg.name} result]\n${currMsg.content}`
+			const lastMsg = newMessages[newMessages.length - 1]
+
+			if (lastMsg && lastMsg.role === 'user' && typeof lastMsg.content === 'string') {
+				lastMsg.content += `\n\n${fallbackText}`
+			} else {
+				newMessages.push({
+					role: 'user',
+					content: fallbackText,
+				} as OpenAILLMChatMessage)
+			}
+			continue
 		}
 
-		// add the tool
+		const prevAssistant = newMessages[lastAssistantIndex]
+		if (prevAssistant.role !== 'assistant') {
+			// Extremely defensive: if bookkeeping is wrong, drop the tool to
+			// avoid sending an invalid OpenAI "tool" message.
+			continue
+		}
+
+		const toolCall = {
+			type: 'function' as const,
+			id: currMsg.id,
+			function: {
+				name: currMsg.name,
+				arguments: JSON.stringify(currMsg.rawParams),
+			},
+		}
+
+		if (!prevAssistant.tool_calls || !Array.isArray(prevAssistant.tool_calls)) {
+			prevAssistant.tool_calls = [toolCall]
+		} else {
+			prevAssistant.tool_calls.push(toolCall)
+		}
+
+		// Add the tool result message that references the assistant's tool_calls id
 		newMessages.push({
 			role: 'tool',
 			tool_call_id: currMsg.id,
@@ -262,9 +302,14 @@ const prepareOpenAIOrAnthropicMessages = ({
 }): { messages: AnthropicOrOpenAILLMMessage[], separateSystemMessage: string | undefined } => {
 
 	reservedOutputTokenSpace = Math.max(
-		contextWindow * 1 / 2, // reserve at least 1/4 of the token window length
+		contextWindow * 1 / 2, // reserve at least 1/2 of the token window length
 		reservedOutputTokenSpace ?? 4_096 // defaults to 4096
 	)
+	// Never reserve more than 75% of the context window for output, to ensure sufficient room for input.
+	const maxReserved = Math.floor(contextWindow * 0.75)
+	if (reservedOutputTokenSpace > maxReserved) {
+		reservedOutputTokenSpace = maxReserved
+	}
 	let messages: (SimpleLLMMessage | { role: 'system', content: string })[] = deepClone(messages_)
 
 	// ================ system message ================

@@ -23,6 +23,7 @@ export interface ILLMMessageService {
 	sendLLMMessage: (params: ServiceSendLLMMessageParams) => string | null;
 	abort: (requestId: string) => void;
 	ollamaList: (params: ServiceModelListParams<OllamaModelResponse>) => void;
+	openAIList: (params: ServiceModelListParams<OpenaiCompatibleModelResponse>) => void;
 	openAICompatibleList: (params: ServiceModelListParams<OpenaiCompatibleModelResponse>) => void;
 }
 
@@ -47,12 +48,16 @@ export class LLMMessageService extends Disposable implements ILLMMessageService 
 			success: {} as { [eventId: string]: ((params: EventModelListOnSuccessParams<OllamaModelResponse>) => void) },
 			error: {} as { [eventId: string]: ((params: EventModelListOnErrorParams<OllamaModelResponse>) => void) },
 		},
+		openAI: {
+			success: {} as { [eventId: string]: ((params: EventModelListOnSuccessParams<OpenaiCompatibleModelResponse>) => void) },
+			error: {} as { [eventId: string]: ((params: EventModelListOnErrorParams<OpenaiCompatibleModelResponse>) => void) },
+		},
 		openAICompat: {
 			success: {} as { [eventId: string]: ((params: EventModelListOnSuccessParams<OpenaiCompatibleModelResponse>) => void) },
 			error: {} as { [eventId: string]: ((params: EventModelListOnErrorParams<OpenaiCompatibleModelResponse>) => void) },
 		}
 	} satisfies {
-		[providerName in 'ollama' | 'openAICompat']: {
+		[providerName in 'ollama' | 'openAI' | 'openAICompat']: {
 			success: { [eventId: string]: ((params: EventModelListOnSuccessParams<any>) => void) },
 			error: { [eventId: string]: ((params: EventModelListOnErrorParams<any>) => void) },
 		}
@@ -90,6 +95,12 @@ export class LLMMessageService extends Disposable implements ILLMMessageService 
 		}))
 		this._register((this.channel.listen('onError_list_ollama') satisfies Event<EventModelListOnErrorParams<OllamaModelResponse>>)(e => {
 			this.listHooks.ollama.error[e.requestId]?.(e)
+		}))
+		this._register((this.channel.listen('onSuccess_list_openAI') satisfies Event<EventModelListOnSuccessParams<OpenaiCompatibleModelResponse>>)(e => {
+			this.listHooks.openAI.success[e.requestId]?.(e)
+		}))
+		this._register((this.channel.listen('onError_list_openAI') satisfies Event<EventModelListOnErrorParams<OpenaiCompatibleModelResponse>>)(e => {
+			this.listHooks.openAI.error[e.requestId]?.(e)
 		}))
 		this._register((this.channel.listen('onSuccess_list_openAICompatible') satisfies Event<EventModelListOnSuccessParams<OpenaiCompatibleModelResponse>>)(e => {
 			this.listHooks.openAICompat.success[e.requestId]?.(e)
@@ -164,6 +175,23 @@ export class LLMMessageService extends Disposable implements ILLMMessageService 
 		} satisfies MainModelListParams<OllamaModelResponse>)
 	}
 
+	openAIList = (params: ServiceModelListParams<OpenaiCompatibleModelResponse>) => {
+		const { onSuccess, onError, ...proxyParams } = params
+
+		const { settingsOfProvider } = this.voidSettingsService.state
+
+		// add state for request id
+		const requestId_ = generateUuid();
+		this.listHooks.openAI.success[requestId_] = onSuccess
+		this.listHooks.openAI.error[requestId_] = onError
+
+		this.channel.call('openAIList', {
+			...proxyParams,
+			settingsOfProvider,
+			requestId: requestId_,
+		} satisfies MainModelListParams<OpenaiCompatibleModelResponse>)
+	}
+
 
 	openAICompatibleList = (params: ServiceModelListParams<OpenaiCompatibleModelResponse>) => {
 		const { onSuccess, onError, ...proxyParams } = params
@@ -189,6 +217,9 @@ export class LLMMessageService extends Disposable implements ILLMMessageService 
 
 		delete this.listHooks.ollama.success[requestId]
 		delete this.listHooks.ollama.error[requestId]
+
+		delete this.listHooks.openAI.success[requestId]
+		delete this.listHooks.openAI.error[requestId]
 
 		delete this.listHooks.openAICompat.success[requestId]
 		delete this.listHooks.openAICompat.error[requestId]

@@ -386,8 +386,8 @@ export const displayInfoOfFeatureName = (featureName: FeatureName) => {
 
 
 // the models of these can be refreshed (in theory all can, but not all should)
-export const refreshableProviderNames = localProviderNames
-export type RefreshableProviderName = typeof refreshableProviderNames[number]
+export const refreshableProviderNames = [...localProviderNames, 'openAI'] as const satisfies ProviderName[]
+export type RefreshableProviderName = (typeof refreshableProviderNames)[number]
 
 // models that come with download buttons
 export const hasDownloadButtonsOnModelsProviderNames = ['ollama'] as const satisfies ProviderName[]
