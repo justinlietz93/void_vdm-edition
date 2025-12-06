@@ -1,0 +1,82 @@
+%% C4 Container Diagram for Void Editor
+%% Internal container architecture
+%% Last Updated: 2025-11-09
+%% Commit: 7c1f1947e3ea704ba30609c343863d16d5c91185
+
+graph TB
+    %% External Actor
+    Developer[👤 Developer]
+    
+    %% Main Containers
+    subgraph VoidEditor["Void Editor System"]
+        direction TB
+        
+        subgraph ElectronMain["Electron Main Process"]
+            MainProcess[Main Process<br/><br/>Node.js<br/>---<br/>Process lifecycle<br/>OS integration<br/>IPC coordination]
+            
+            LLMComms[LLM Communication<br/><br/>Node.js<br/>---<br/>Provider API calls<br/>Request/response handling<br/>Streaming coordination]
+            
+            FileOps[File Operations<br/><br/>Node.js<br/>---<br/>File system I/O<br/>Native operations]
+        end
+        
+        subgraph RendererProcess["Renderer Process (Workbench)"]
+            Workbench[VS Code Workbench<br/><br/>TypeScript/HTML<br/>---<br/>Editor management<br/>Extension host<br/>UI framework]
+            
+            VoidCore[Void Core<br/><br/>TypeScript + React<br/>---<br/>Chat interface<br/>Edit operations<br/>Context gathering<br/>Settings management]
+            
+            EditorView[Editor & Models<br/><br/>Monaco Editor<br/>---<br/>Text models<br/>Syntax highlighting<br/>Diff visualization]
+        end
+        
+        ExtensionHost[Extension Host<br/><br/>Node.js<br/>---<br/>Language servers<br/>Extension APIs<br/>Isolated execution]
+        
+        CLI[Void CLI<br/><br/>Node.js<br/>---<br/>Command-line interface<br/>Remote operations<br/>Extension management]
+    end
+    
+    %% External Systems
+    LLMProviders[🤖 LLM Providers<br/>OpenAI, Anthropic, etc.]
+    FileSystem[💾 File System]
+    Analytics[📊 PostHog Analytics]
+    ExtRegistry[🐙 Extension Registry]
+    
+    %% User Interactions
+    Developer -->|Interacts with UI| VoidCore
+    Developer -->|Types code| EditorView
+    Developer -->|Command line| CLI
+    
+    %% Inter-container communication
+    VoidCore <-->|IPC: LLM requests| LLMComms
+    VoidCore <-->|Event: Model changes| Workbench
+    VoidCore <-->|API: Text operations| EditorView
+    
+    Workbench -->|Loads & manages| VoidCore
+    Workbench <-->|IPC| MainProcess
+    Workbench -->|Hosts| ExtensionHost
+    
+    EditorView -->|File read/write| FileOps
+    
+    MainProcess -->|Spawns & controls| Workbench
+    MainProcess <-->|Manages| CLI
+    
+    %% External communication
+    LLMComms -->|HTTPS: API calls| LLMProviders
+    LLMProviders -.->|Streaming: Responses| LLMComms
+    
+    FileOps <-->|Reads/writes| FileSystem
+    
+    VoidCore -->|Sends events| Analytics
+    
+    CLI -->|Downloads| ExtRegistry
+    ExtensionHost -->|Loads from| ExtRegistry
+    
+    %% Styling
+    classDef containerStyle fill:#4A90E2,stroke:#2E5C8A,stroke-width:2px,color:#fff
+    classDef voidStyle fill:#9B59B6,stroke:#7D3C98,stroke-width:2px,color:#fff
+    classDef processStyle fill:#3498DB,stroke:#2874A6,stroke-width:2px,color:#fff
+    classDef externalStyle fill:#FF6B6B,stroke:#C92A2A,stroke-width:2px,color:#fff
+    classDef personStyle fill:#50C878,stroke:#2E7D32,stroke-width:2px,color:#fff
+    
+    class MainProcess,LLMComms,FileOps processStyle
+    class Workbench,EditorView,ExtensionHost,CLI containerStyle
+    class VoidCore voidStyle
+    class LLMProviders,FileSystem,Analytics,ExtRegistry externalStyle
+    class Developer personStyle

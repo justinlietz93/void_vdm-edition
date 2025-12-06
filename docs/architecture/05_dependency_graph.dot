@@ -1,0 +1,107 @@
+digraph VoidDependencies {
+    rankdir=LR;
+    node [shape=box, style=filled, fontname="Arial"];
+    
+    // Define layers
+    subgraph cluster_presentation {
+        label="Presentation Layer";
+        style=filled;
+        color=lightgrey;
+        
+        SidebarPane [label="Sidebar Pane\n(React UI)", fillcolor="#E74C3C"];
+        SettingsPane [label="Settings Pane\n(React UI)", fillcolor="#E74C3C"];
+        DiffViz [label="Diff Visualizer", fillcolor="#E74C3C"];
+    }
+    
+    subgraph cluster_application {
+        label="Application Layer";
+        style=filled;
+        color=lightblue;
+        
+        ChatThread [label="Chat Thread\nService", fillcolor="#3498DB"];
+        EditCode [label="Edit Code\nService", fillcolor="#3498DB"];
+        ContextGather [label="Context Gathering\nService", fillcolor="#3498DB"];
+        Tools [label="Tools\nService", fillcolor="#3498DB"];
+        Convert [label="Message Converter", fillcolor="#3498DB"];
+    }
+    
+    subgraph cluster_infrastructure {
+        label="Infrastructure Layer";
+        style=filled;
+        color=lightgreen;
+        
+        Settings [label="Settings\nService", fillcolor="#27AE60"];
+        VoidModel [label="Void Model\nService", fillcolor="#27AE60"];
+        RefreshModel [label="Refresh Model\nService", fillcolor="#27AE60"];
+        FileService [label="File Service", fillcolor="#27AE60"];
+    }
+    
+    subgraph cluster_domain {
+        label="Domain Layer";
+        style=filled;
+        color=lightyellow;
+        
+        ModelCaps [label="Model Capabilities", fillcolor="#F39C12"];
+        Helpers [label="Helper Utilities", fillcolor="#F39C12"];
+    }
+    
+    subgraph cluster_external {
+        label="External Systems";
+        style=filled;
+        color=lightgray;
+        
+        VSCodePlatform [label="VS Code Platform", fillcolor="#95A5A6"];
+        ElectronMain [label="Electron Main\n(LLM Comms)", fillcolor="#95A5A6"];
+        LLMProviders [label="LLM Providers", fillcolor="#FFA500"];
+    }
+    
+    // Presentation dependencies
+    SidebarPane -> ChatThread [label="sends messages"];
+    SidebarPane -> EditCode [label="triggers apply"];
+    SettingsPane -> Settings [label="configures"];
+    DiffViz -> EditCode [label="renders from"];
+    
+    // Application layer dependencies
+    ChatThread -> ContextGather [label="gathers context"];
+    ChatThread -> Convert [label="formats messages"];
+    ChatThread -> Tools [label="executes tools"];
+    ChatThread -> Settings [label="reads config"];
+    ChatThread -> ElectronMain [label="IPC: LLM requests"];
+    
+    EditCode -> Helpers [label="parse/diff"];
+    EditCode -> VoidModel [label="writes changes"];
+    EditCode -> Settings [label="reads mode"];
+    
+    ContextGather -> FileService [label="queries files"];
+    ContextGather -> Helpers [label="analyzes code"];
+    ContextGather -> Settings [label="reads config"];
+    
+    Tools -> EditCode [label="triggers edits"];
+    Tools -> ContextGather [label="gathers context"];
+    
+    Convert -> ModelCaps [label="checks capabilities"];
+    
+    // Infrastructure dependencies
+    Settings -> VSCodePlatform [label="storage"];
+    VoidModel -> VSCodePlatform [label="text models"];
+    FileService -> VSCodePlatform [label="workspace"];
+    RefreshModel -> ElectronMain [label="IPC: poll models"];
+    
+    // External dependencies
+    ElectronMain -> LLMProviders [label="HTTP/HTTPS"];
+    
+    // Legend
+    {
+        rank=sink;
+        Legend [shape=none, margin=0, label=<
+            <TABLE BORDER="0" CELLBORDER="1" CELLSPACING="0" CELLPADDING="4">
+            <TR><TD COLSPAN="2"><B>Legend</B></TD></TR>
+            <TR><TD BGCOLOR="#E74C3C">Presentation</TD><TD>UI Components</TD></TR>
+            <TR><TD BGCOLOR="#3498DB">Application</TD><TD>Business Logic</TD></TR>
+            <TR><TD BGCOLOR="#F39C12">Domain</TD><TD>Core Logic</TD></TR>
+            <TR><TD BGCOLOR="#27AE60">Infrastructure</TD><TD>Platform Services</TD></TR>
+            <TR><TD BGCOLOR="#95A5A6">External</TD><TD>External Systems</TD></TR>
+            </TABLE>
+        >];
+    }
+}

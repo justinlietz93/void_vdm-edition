@@ -1,0 +1,182 @@
+%% Domain Model: Void Editor Entities and Aggregates
+%% Last Updated: 2025-11-09
+
+classDiagram
+    %% Aggregates
+    class Thread {
+        +String id
+        +String title
+        +Date createdAt
+        +Date updatedAt
+        +Message[] messages
+        +String mode
+        +addMessage(message)
+        +getMessages()
+        +clear()
+    }
+    
+    class Message {
+        +String id
+        +String threadId
+        +String role
+        +String content
+        +Date timestamp
+        +Boolean isStreaming
+        +ToolCall[] toolCalls
+        +Usage usage
+    }
+    
+    class DiffZone {
+        +String id
+        +URI modelUri
+        +Number startLine
+        +Number endLine
+        +Change[] changes
+        +Boolean isApproved
+        +CancelToken llmCancelToken
+        +computeDiff()
+        +apply()
+        +reject()
+        +cancel()
+    }
+    
+    class Provider {
+        +String name
+        +String type
+        +String apiKey
+        +String endpoint
+        +Model[] models
+        +authenticate()
+        +sendRequest()
+        +streamResponse()
+    }
+    
+    class Model {
+        +String id
+        +String name
+        +String provider
+        +Number maxTokens
+        +Boolean supportsTools
+        +Boolean supportsStreaming
+        +Boolean supportsVision
+        +Pricing pricing
+    }
+    
+    %% Value Objects
+    class Change {
+        <<ValueObject>>
+        +String type
+        +Number line
+        +String oldContent
+        +String newContent
+    }
+    
+    class ToolCall {
+        <<ValueObject>>
+        +String id
+        +String name
+        +Object arguments
+        +String result
+    }
+    
+    class Usage {
+        <<ValueObject>>
+        +Number promptTokens
+        +Number completionTokens
+        +Number totalTokens
+        +Number costEstimate
+    }
+    
+    class Context {
+        <<ValueObject>>
+        +File[] files
+        +Symbol[] symbols
+        +String[] recentEdits
+        +Number tokenCount
+    }
+    
+    class File {
+        <<ValueObject>>
+        +URI uri
+        +String path
+        +String content
+        +String language
+        +Number relevanceScore
+    }
+    
+    class Symbol {
+        <<ValueObject>>
+        +String name
+        +String type
+        +String signature
+        +Location location
+    }
+    
+    class Pricing {
+        <<ValueObject>>
+        +Number inputCostPer1k
+        +Number outputCostPer1k
+    }
+    
+    class Location {
+        <<ValueObject>>
+        +URI uri
+        +Number startLine
+        +Number endLine
+    }
+    
+    %% Relationships
+    Thread "1" *-- "*" Message : contains
+    Message "1" *-- "*" ToolCall : may have
+    Message "1" *-- "0..1" Usage : has
+    
+    DiffZone "1" *-- "*" Change : contains
+    
+    Provider "1" *-- "*" Model : provides
+    Model "1" *-- "0..1" Pricing : has
+    
+    Message ..> Context : includes
+    Context "1" *-- "*" File : contains
+    Context "1" *-- "*" Symbol : contains
+    
+    Symbol "1" *-- "1" Location : at
+    
+    %% Services (for reference)
+    class ChatThreadService {
+        <<Service>>
+        +createThread()
+        +sendMessage()
+        +streamResponse()
+        +getThread()
+    }
+    
+    class EditCodeService {
+        <<Service>>
+        +apply()
+        +quickEdit()
+        +createDiffZone()
+        +acceptZone()
+        +rejectZone()
+    }
+    
+    class VoidSettingsService {
+        <<Service>>
+        +getProvider()
+        +setProvider()
+        +getModelSelection()
+        +setModelSelection()
+    }
+    
+    ChatThreadService ..> Thread : manages
+    ChatThreadService ..> Message : creates
+    ChatThreadService ..> Provider : uses
+    
+    EditCodeService ..> DiffZone : manages
+    
+    VoidSettingsService ..> Provider : configures
+    VoidSettingsService ..> Model : selects
+    
+    %% Invariants & Business Rules
+    note for Thread "Invariants:\n- ID must be unique\n- Messages ordered by timestamp\n- Cannot delete active thread"
+    note for DiffZone "Invariants:\n- startLine <= endLine\n- Cannot apply if isApproved=false\n- Cancel clears llmCancelToken"
+    note for Provider "Invariants:\n- apiKey required for remote providers\n- Ollama uses localhost endpoint\n- Name must be unique"

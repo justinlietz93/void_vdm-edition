@@ -1,0 +1,121 @@
+%% Dataflow Diagram: End-to-End Data Flow
+%% Shows data movement through storage, caches, and external services
+%% Last Updated: 2025-11-09
+
+graph TB
+    subgraph "User Domain"
+        User[👤 User]
+    end
+    
+    subgraph "Presentation Layer"
+        UI[Sidebar UI<br/>React Components]
+        Settings[Settings UI]
+    end
+    
+    subgraph "Application Layer"
+        ChatSvc[Chat Thread Service]
+        EditSvc[Edit Code Service]
+        CtxSvc[Context Gathering Service]
+        ToolsSvc[Tools Service]
+    end
+    
+    subgraph "Data Storage"
+        LocalStorage[(Local Storage<br/>JSON)]
+        FileSystem[(File System<br/>Workspace)]
+        TempCache[(In-Memory Cache<br/>Context, Symbols)]
+    end
+    
+    subgraph "External Services"
+        LLM1[OpenAI API]
+        LLM2[Anthropic API]
+        LLM3[Other LLMs]
+        Analytics[PostHog Analytics]
+    end
+    
+    subgraph "Data Transformations"
+        Parser[Code Parser<br/>Extract Symbols]
+        Formatter[Message Formatter<br/>Provider-Specific]
+        DiffEngine[Diff Engine<br/>Compute Changes]
+    end
+    
+    %% User Interactions
+    User -->|Input: Message| UI
+    User -->|Config: API Keys| Settings
+    User -->|Action: Apply| UI
+    
+    %% UI to Services
+    UI -->|Message Text| ChatSvc
+    Settings -->|Config Data| LocalStorage
+    UI -->|Apply Request| EditSvc
+    
+    %% Service to Storage
+    ChatSvc -->|Read: Settings| LocalStorage
+    ChatSvc -->|Read: Thread History| LocalStorage
+    ChatSvc -->|Write: New Messages| LocalStorage
+    
+    CtxSvc -->|Scan: Workspace Files| FileSystem
+    CtxSvc -->|Read: File Contents| FileSystem
+    CtxSvc -->|Cache: Symbols| TempCache
+    
+    EditSvc -->|Read: Current File| FileSystem
+    EditSvc -->|Write: Modified File| FileSystem
+    
+    %% Data Transformations
+    CtxSvc -->|File Content| Parser
+    Parser -->|Symbols, AST| CtxSvc
+    
+    ChatSvc -->|Thread + Context| Formatter
+    Formatter -->|Provider Messages| ChatSvc
+    
+    EditSvc -->|Original + Modified| DiffEngine
+    DiffEngine -->|Diff Zones| EditSvc
+    
+    %% External API Calls
+    ChatSvc -->|HTTP POST: Prompt| LLM1
+    ChatSvc -->|HTTP POST: Prompt| LLM2
+    ChatSvc -->|HTTP POST: Prompt| LLM3
+    
+    LLM1 -.->|Stream: Tokens| ChatSvc
+    LLM2 -.->|Stream: Tokens| ChatSvc
+    LLM3 -.->|Stream: Tokens| ChatSvc
+    
+    %% Tool Execution
+    ChatSvc -->|Tool Call Request| ToolsSvc
+    ToolsSvc -->|Trigger Edit| EditSvc
+    ToolsSvc -->|Gather Context| CtxSvc
+    ToolsSvc -.->|Tool Result| ChatSvc
+    
+    %% Analytics
+    UI -->|Usage Events| Analytics
+    ChatSvc -->|Interaction Events| Analytics
+    
+    %% Response Flow
+    ChatSvc -.->|Response Tokens| UI
+    EditSvc -.->|Diff Preview| UI
+    UI -.->|Display| User
+    
+    %% Data Flow Legend
+    subgraph "Data Types"
+        D1[User Input<br/>Text, Files, Settings]
+        D2[Context Data<br/>Files, Symbols, History]
+        D3[LLM Messages<br/>Formatted Prompts]
+        D4[LLM Responses<br/>Token Streams]
+        D5[File Changes<br/>Diffs, Edits]
+    end
+    
+    %% Styling
+    classDef userStyle fill:#50C878,stroke:#2E7D32,stroke-width:2px,color:#fff
+    classDef uiStyle fill:#E74C3C,stroke:#C0392B,stroke-width:2px,color:#fff
+    classDef serviceStyle fill:#3498DB,stroke:#2874A6,stroke-width:2px,color:#fff
+    classDef storageStyle fill:#845EC2,stroke:#5B3F8F,stroke-width:2px,color:#fff
+    classDef externalStyle fill:#FFA500,stroke:#CC8400,stroke-width:2px,color:#fff
+    classDef transformStyle fill:#F39C12,stroke:#D68910,stroke-width:2px,color:#fff
+    classDef dataStyle fill:#95A5A6,stroke:#7F8C8D,stroke-width:2px,color:#fff
+    
+    class User userStyle
+    class UI,Settings uiStyle
+    class ChatSvc,EditSvc,CtxSvc,ToolsSvc serviceStyle
+    class LocalStorage,FileSystem,TempCache storageStyle
+    class LLM1,LLM2,LLM3,Analytics externalStyle
+    class Parser,Formatter,DiffEngine transformStyle
+    class D1,D2,D3,D4,D5 dataStyle

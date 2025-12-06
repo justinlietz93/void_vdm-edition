@@ -1,0 +1,412 @@
+{
+  "system": "Void Editor (VDM Edition)",
+  "commit": "7c1f1947e3ea704ba30609c343863d16d5c91185",
+  "languages": [
+    "TypeScript",
+    "JavaScript",
+    "React"
+  ],
+  "containers": [
+    {
+      "name": "Electron Main Process",
+      "tech": "Node.js / Electron Main",
+      "responsibilities": [
+        "Process lifecycle management",
+        "Native OS integration",
+        "LLM provider communication",
+        "File system operations",
+        "IPC coordination"
+      ],
+      "paths": [
+        "src/vs/code",
+        "src/vs/platform",
+        "src/main.ts"
+      ],
+      "deps": []
+    },
+    {
+      "name": "Workbench (Browser Process)",
+      "tech": "TypeScript / Electron Renderer",
+      "responsibilities": [
+        "UI rendering and interaction",
+        "Editor and model management",
+        "Extension host coordination",
+        "User settings and preferences"
+      ],
+      "paths": [
+        "src/vs/workbench"
+      ],
+      "deps": [
+        "Electron Main Process"
+      ]
+    },
+    {
+      "name": "Void Core Features",
+      "tech": "TypeScript + React",
+      "responsibilities": [
+        "AI chat interface",
+        "Code editing (Apply, Cmd+K)",
+        "Context gathering",
+        "LLM message pipeline",
+        "Diff visualization"
+      ],
+      "paths": [
+        "src/vs/workbench/contrib/void"
+      ],
+      "deps": [
+        "Workbench (Browser Process)",
+        "Electron Main Process"
+      ]
+    },
+    {
+      "name": "Extensions",
+      "tech": "TypeScript / Extension API",
+      "responsibilities": [
+        "Language support",
+        "Theme and icon packs",
+        "Additional tooling integration"
+      ],
+      "paths": [
+        "extensions"
+      ],
+      "deps": [
+        "Workbench (Browser Process)"
+      ]
+    },
+    {
+      "name": "CLI",
+      "tech": "Node.js / TypeScript",
+      "responsibilities": [
+        "Command-line interface",
+        "Remote server operations",
+        "Extension management"
+      ],
+      "paths": [
+        "cli"
+      ],
+      "deps": []
+    }
+  ],
+  "components": [
+    {
+      "container": "Void Core Features",
+      "name": "Chat Thread Service",
+      "path": "src/vs/workbench/contrib/void/browser/chatThreadService.ts",
+      "layer": "application",
+      "responsibilities": [
+        "Manage conversation threads",
+        "Message history",
+        "Thread state"
+      ]
+    },
+    {
+      "container": "Void Core Features",
+      "name": "Edit Code Service",
+      "path": "src/vs/workbench/contrib/void/browser/editCodeService.ts",
+      "layer": "application",
+      "responsibilities": [
+        "Apply code changes",
+        "Diff zone management",
+        "Fast/Slow apply modes"
+      ]
+    },
+    {
+      "container": "Void Core Features",
+      "name": "Context Gathering Service",
+      "path": "src/vs/workbench/contrib/void/browser/contextGatheringService.ts",
+      "layer": "application",
+      "responsibilities": [
+        "Collect code context",
+        "Workspace analysis",
+        "Context prioritization"
+      ]
+    },
+    {
+      "container": "Void Core Features",
+      "name": "Void Settings Service",
+      "path": "src/vs/workbench/contrib/void/common/voidSettingsService.ts",
+      "layer": "infrastructure",
+      "responsibilities": [
+        "Provider configuration",
+        "Model selection",
+        "Feature settings"
+      ]
+    },
+    {
+      "container": "Void Core Features",
+      "name": "Tools Service",
+      "path": "src/vs/workbench/contrib/void/browser/toolsService.ts",
+      "layer": "application",
+      "responsibilities": [
+        "LLM tool definitions",
+        "Tool execution",
+        "Tool result parsing"
+      ]
+    }
+  ],
+  "pipelines": [
+    {
+      "name": "LLM Message Pipeline",
+      "description": "User message → LLM provider → Response streaming",
+      "entrypoints": [
+        "sidebarPane.ts",
+        "chatThreadService.ts"
+      ],
+      "stages": [
+        {
+          "id": "user_input",
+          "title": "User Input",
+          "files": [
+            "sidebarPane.ts"
+          ]
+        },
+        {
+          "id": "context_gather",
+          "title": "Context Gathering",
+          "files": [
+            "contextGatheringService.ts"
+          ]
+        },
+        {
+          "id": "message_format",
+          "title": "Message Formatting",
+          "files": [
+            "convertToLLMMessageService.ts"
+          ]
+        },
+        {
+          "id": "provider_call",
+          "title": "Provider API Call",
+          "files": [
+            "electron-main/llm"
+          ]
+        },
+        {
+          "id": "response_stream",
+          "title": "Response Streaming",
+          "files": [
+            "chatThreadService.ts"
+          ]
+        },
+        {
+          "id": "ui_update",
+          "title": "UI Update",
+          "files": [
+            "sidebarPane.ts"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Apply (Code Edit) Pipeline",
+      "description": "LLM code suggestion → Diff visualization → User approval → File write",
+      "entrypoints": [
+        "editCodeService.ts"
+      ],
+      "stages": [
+        {
+          "id": "trigger",
+          "title": "Apply Trigger",
+          "files": [
+            "editCodeService.ts"
+          ]
+        },
+        {
+          "id": "parse_changes",
+          "title": "Parse Changes",
+          "files": [
+            "helpers/extractCodeFromResult.ts"
+          ]
+        },
+        {
+          "id": "diff_compute",
+          "title": "Compute Diffs",
+          "files": [
+            "helpers/findDiffs.ts"
+          ]
+        },
+        {
+          "id": "diff_render",
+          "title": "Render Diff Zones",
+          "files": [
+            "editCodeService.ts"
+          ]
+        },
+        {
+          "id": "user_approval",
+          "title": "User Approval",
+          "files": [
+            "sidebarPane.ts"
+          ]
+        },
+        {
+          "id": "file_write",
+          "title": "Write to Model",
+          "files": [
+            "voidModelService.ts"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Context Gathering Pipeline",
+      "description": "Workspace scan → File analysis → Context prioritization → LLM context",
+      "entrypoints": [
+        "contextGatheringService.ts"
+      ],
+      "stages": [
+        {
+          "id": "workspace_scan",
+          "title": "Workspace Scan",
+          "files": [
+            "contextGatheringService.ts"
+          ]
+        },
+        {
+          "id": "file_filter",
+          "title": "File Filtering",
+          "files": [
+            "fileService.ts"
+          ]
+        },
+        {
+          "id": "content_extract",
+          "title": "Content Extraction",
+          "files": [
+            "contextGatheringService.ts"
+          ]
+        },
+        {
+          "id": "prioritize",
+          "title": "Prioritization",
+          "files": [
+            "contextGatheringService.ts"
+          ]
+        },
+        {
+          "id": "format_context",
+          "title": "Format for LLM",
+          "files": [
+            "convertToLLMMessageService.ts"
+          ]
+        }
+      ]
+    }
+  ],
+  "stores": [
+    {
+      "type": "Local Storage",
+      "usage": "User settings, conversation history",
+      "collections": [
+        "settings",
+        "threads",
+        "providers"
+      ]
+    },
+    {
+      "type": "File System",
+      "usage": "Workspace files, user code",
+      "collections": [
+        "workspace",
+        "models"
+      ]
+    }
+  ],
+  "integrations": [
+    {
+      "name": "OpenAI",
+      "type": "LLM Provider"
+    },
+    {
+      "name": "Anthropic",
+      "type": "LLM Provider"
+    },
+    {
+      "name": "Mistral AI",
+      "type": "LLM Provider"
+    },
+    {
+      "name": "Google Gemini",
+      "type": "LLM Provider"
+    },
+    {
+      "name": "Ollama",
+      "type": "Local LLM"
+    },
+    {
+      "name": "Groq",
+      "type": "LLM Provider"
+    },
+    {
+      "name": "MCP",
+      "type": "Protocol"
+    },
+    {
+      "name": "React",
+      "type": "UI Framework"
+    },
+    {
+      "name": "PostHog",
+      "type": "Analytics"
+    },
+    {
+      "name": "Electron",
+      "type": "Runtime"
+    }
+  ],
+  "apis": [
+    {
+      "name": "Void Extension API",
+      "type": "internal",
+      "endpoints": [
+        "IVoidSettingsService",
+        "IEditCodeService",
+        "IChatThreadService"
+      ]
+    },
+    {
+      "name": "LLM Provider APIs",
+      "type": "rest",
+      "endpoints": [
+        "OpenAI Chat Completions",
+        "Anthropic Messages",
+        "Mistral Chat"
+      ]
+    }
+  ],
+  "metrics": {
+    "cycles": [],
+    "hotspots": [
+      "src/vs/workbench/contrib/void/browser/editCodeService.ts",
+      "src/vs/workbench/contrib/void/browser/chatThreadService.ts",
+      "src/vs/workbench/contrib/void/browser/contextGatheringService.ts"
+    ],
+    "test_coverage": {
+      "overall": 0,
+      "by_module": {}
+    }
+  },
+  "risks": [
+    {
+      "id": "R001",
+      "title": "LLM API Key Security",
+      "severity": "H",
+      "where": "voidSettingsService.ts",
+      "rationale": "API keys stored in local storage; need encryption at rest"
+    },
+    {
+      "id": "R002",
+      "title": "Large File Processing",
+      "severity": "M",
+      "where": "contextGatheringService.ts",
+      "rationale": "May exceed token limits with large workspaces"
+    },
+    {
+      "id": "R003",
+      "title": "Concurrent Edit Conflicts",
+      "severity": "M",
+      "where": "editCodeService.ts",
+      "rationale": "Multiple simultaneous edits could cause race conditions"
+    }
+  ]
+}
