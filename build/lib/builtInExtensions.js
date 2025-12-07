@@ -154,6 +154,11 @@ function writeControlFile(control) {
     fs_1.default.writeFileSync(controlFilePath, JSON.stringify(control, null, 2));
 }
 function getBuiltInExtensions() {
+    const skipSyncEnv = process.env['VOID_SKIP_BUILTIN_EXTENSIONS_DOWNLOAD'];
+    if (skipSyncEnv === '1' || skipSyncEnv === 'true') {
+        log('Skipping built-in extensions synchronization (VOID_SKIP_BUILTIN_EXTENSIONS_DOWNLOAD set).');
+        return Promise.resolve();
+    }
     log('Synchronizing built-in extensions...');
     log(`You can manage built-in extensions with the ${ansi_colors_1.default.cyan('--builtin')} flag`);
     const control = readControlFile();

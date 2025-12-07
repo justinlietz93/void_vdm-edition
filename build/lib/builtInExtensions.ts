@@ -159,6 +159,12 @@ function writeControlFile(control: IControlFile): void {
 }
 
 export function getBuiltInExtensions(): Promise<void> {
+	const skipSyncEnv = process.env['VOID_SKIP_BUILTIN_EXTENSIONS_DOWNLOAD'];
+	if (skipSyncEnv === '1' || skipSyncEnv === 'true') {
+		log('Skipping built-in extensions synchronization (VOID_SKIP_BUILTIN_EXTENSIONS_DOWNLOAD set).');
+		return Promise.resolve();
+	}
+
 	log('Synchronizing built-in extensions...');
 	log(`You can manage built-in extensions with the ${ansiColors.cyan('--builtin')} flag`);
 

@@ -1,7 +1,4 @@
-/*--------------------------------------------------------------------------------------
- *  Copyright 2025 Glass Devtools, Inc. All rights reserved.
- *  Licensed under the Apache License, Version 2.0. See LICENSE.txt for more information.
- *--------------------------------------------------------------------------------------*/
+// TODO: This file needs to be reduced to <500 LOC (extract code to files in a subfolder)
 
 import React, { useCallback, useEffect, useMemo, useState, useRef } from 'react'; // Added useRef import just in case it was missed, though likely already present
 import { ProviderName, SettingName, displayInfoOfSettingName, providerNames, VoidStatefulModelInfo, customSettingNamesOfProvider, RefreshableProviderName, refreshableProviderNames, displayInfoOfProviderName, nonlocalProviderNames, localProviderNames, GlobalSettingName, featureNames, displayInfoOfFeatureName, isProviderNameDisabled, FeatureName, hasDownloadButtonsOnModelsProviderNames, subTextMdOfProviderName } from '../../../../common/voidSettingsTypes.js'
@@ -616,6 +613,7 @@ const ProviderSetting = ({ providerName, settingName, subTextMd }: { providerNam
 
 	const accessor = useAccessor()
 	const voidSettingsService = accessor.get('IVoidSettingsService')
+	const keySyncService = accessor.get('IKeySyncService')
 	const settingsState = useSettingsState()
 
 	const settingValue = settingsState.settingsOfProvider[providerName][settingName] as string // this should always be a string in this component
@@ -627,7 +625,26 @@ const ProviderSetting = ({ providerName, settingName, subTextMd }: { providerNam
 	// Create a stable callback reference using useCallback with proper dependencies
 	const handleChangeValue = useCallback((newVal: string) => {
 		voidSettingsService.setSettingOfProvider(providerName, settingName, newVal)
-	}, [voidSettingsService, providerName, settingName]);
+		if (settingName === 'apiKey') {
+			// Immediately sync the real key value into Crux via the dedicated key-sync channel.
+			// syncCruxKey() will ignore masked or invalid values (e.g. "*****") and cache duplicates.
+			keySyncService.syncProviderKey(providerName, newVal)
+		}
+	}, [voidSettingsService, keySyncService, providerName, settingName])
+
+	const handleRemoveKey = useCallback(async () => {
+		if (settingName !== 'apiKey') {
+			return
+		}
+		try {
+			// Explicitly remove the key from Crux's key vault.
+			await keySyncService.deleteProviderKey(providerName)
+		} finally {
+			// Clear the local setting. This will trigger syncProviderKey with an empty
+			// value, which is a no-op for Crux but keeps the UI state consistent.
+			voidSettingsService.setSettingOfProvider(providerName, settingName, '')
+		}
+	}, [keySyncService, voidSettingsService, providerName, settingName])
 
 	return <ErrorBoundary>
 		<div className='my-1'>
@@ -638,6 +655,17 @@ const ProviderSetting = ({ providerName, settingName, subTextMd }: { providerNam
 				passwordBlur={isPasswordField}
 				compact={true}
 			/>
+			{settingName === 'apiKey' && (
+				<div className='flex justify-end mt-1'>
+					<button
+						type="button"
+						className='text-xs text-void-fg-3 hover:text-void-fg-1 underline'
+						onClick={handleRemoveKey}
+					>
+						Remove key from Crux
+					</button>
+				</div>
+			)}
 			{!subTextMd ? null : <div className='py-1 px-3 opacity-50 text-sm'>
 				{subTextMd}
 			</div>}

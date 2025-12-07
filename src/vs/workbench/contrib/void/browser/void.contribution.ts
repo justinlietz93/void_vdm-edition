@@ -1,7 +1,3 @@
-/*--------------------------------------------------------------------------------------
- *  Copyright 2025 Glass Devtools, Inc. All rights reserved.
- *  Licensed under the Apache License, Version 2.0. See LICENSE.txt for more information.
- *--------------------------------------------------------------------------------------*/
 
 
 // register inline diffs
@@ -71,6 +67,7 @@ import '../common/sendLLMMessageService.js'
 
 // voidSettings
 import '../common/voidSettingsService.js'
+import '../common/keySyncService.js'
 
 // refreshModel
 import '../common/refreshModelService.js'

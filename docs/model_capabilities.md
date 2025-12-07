@@ -1,11 +1,14 @@
 # Void Genesis IDE — Model Capabilities Matrix
 
-_Source of truth: [`modelCapabilities.ts`](void_genesis_ide/src/vs/workbench/contrib/void/common/modelCapabilities.ts:1) and associated provider settings._
+_Canonical source of truth: Crux model catalog (YAML + SQLite) and `/api/models`, consumed by [`modelCapabilities.ts`](void_genesis_ide/src/vs/workbench/contrib/void/common/modelCapabilities.ts:1) and associated provider settings._
 
-This document summarizes how Void Genesis IDE understands different LLM providers and models. It is a human-readable mirror of the static model capability registry implemented in:
+This document summarizes how Void Genesis IDE understands different LLM providers and models. It is a human-readable mirror of the **Crux-backed** model capability surface as seen by the IDE, implemented across:
 
-- [`modelCapabilities.ts`](void_genesis_ide/src/vs/workbench/contrib/void/common/modelCapabilities.ts:1)
-- Truncation and budgeting logic in [`convertToLLMMessageService.ts`](void_genesis_ide/src/vs/workbench/contrib/void/browser/convertToLLMMessageService.ts:243)
+- Crux provider/model catalog YAMLs (for example, [`openai.yaml`](crux/crux_providers/catalog/providers/openai.yaml:1), [`xai.yaml`](crux/crux_providers/catalog/providers/xai.yaml:1))
+- Crux HTTP surface for metadata (for example, [`/api/models`](crux/crux_providers/service/app.py:1), [`/api/providers`](crux/crux_providers/service/app.py:1))
+- IDE adapter and budgeting logic:
+  - [`modelCapabilities.ts`](void_genesis_ide/src/vs/workbench/contrib/void/common/modelCapabilities.ts:1)
+  - Truncation and budgeting logic in [`convertToLLMMessageService.ts`](void_genesis_ide/src/vs/workbench/contrib/void/browser/convertToLLMMessageService.ts:243)
 
 The registry drives:
 
@@ -300,6 +303,13 @@ xAI shares OpenAI-style reasoning input behavior via:
 
 - `providerReasoningIOSettings` referencing `openAICompatIncludeInPayloadReasoning`.
 
+Crux as source of truth:
+
+- Canonical Grok model metadata (context windows, tool formats, reasoning support) lives in the Crux catalog:
+  - [`xai.yaml`](crux/crux_providers/catalog/providers/xai.yaml:1)
+- The IDE’s [`xAIModelOptions`](void_genesis_ide/src/vs/workbench/contrib/void/common/modelCapabilities.ts:733) entry is now a **thin adapter / fallback** over Crux:
+  - Per-model semantics flow from Crux via [`/api/models`](crux/crux_providers/service/app.py:1) and the Crux overlay in [`modelCapabilities.ts`](void_genesis_ide/src/vs/workbench/contrib/void/common/modelCapabilities.ts:1).
+
 ### 3.4 Gemini (`gemini`)
 
 - Default models: [`defaultModelsOfProvider.gemini`](void_genesis_ide/src/vs/workbench/contrib/void/common/modelCapabilities.ts:101)
@@ -328,6 +338,12 @@ Provider settings: [`geminiSettings`](void_genesis_ide/src/vs/workbench/contrib/
 - No current provider-level reasoning input mapping (Gemini-specific reasoning handled via `ThinkingConfig` in:
   - [`sendLLMMessage.impl.ts`](void_genesis_ide/src/vs/workbench/contrib/void/electron-main/llmMessage/sendLLMMessage.impl.ts:717)
 
+Crux as source of truth:
+
+- Canonical Gemini model semantics live in the Crux catalog:
+  - [`gemini.yaml`](crux/crux_providers/catalog/providers/gemini.yaml:1)
+- The IDE’s [`geminiModelOptions`](void_genesis_ide/src/vs/workbench/contrib/void/common/modelCapabilities.ts:808) map is intentionally thin (and may be empty); per-model details are expected to come from Crux via [`/api/models`](crux/crux_providers/service/app.py:1) and the Crux overlay.
+
 ### 3.5 Deepseek (`deepseek`)
 
 - Default models: [`defaultModelsOfProvider.deepseek`](void_genesis_ide/src/vs/workbench/contrib/void/common/modelCapabilities.ts:108)
@@ -353,6 +369,12 @@ Provider reasoning mapping:
 
 - Uses OpenAI-compatible reasoning payload and expects `reasoning_content` on output:
   - [`deepseekSettings`](void_genesis_ide/src/vs/workbench/contrib/void/common/modelCapabilities.ts:946)
+
+Crux as source of truth:
+
+- Deepseek per-model metadata (context windows, reasoning flags) is defined in:
+  - [`deepseek.yaml`](crux/crux_providers/catalog/providers/deepseek.yaml:1)
+- The IDE’s [`deepseekModelOptions`](void_genesis_ide/src/vs/workbench/contrib/void/common/modelCapabilities.ts:928) entry is kept minimal; capability semantics should be updated in Crux first and will flow into the IDE via [`/api/models`](crux/crux_providers/service/app.py:1).
 
 ### 3.6 Mistral (`mistral`)
 
@@ -390,6 +412,12 @@ Provider reasoning mapping:
 - Uses OpenAI-compatible reasoning input for open-source reasoning models:
   - [`mistralSettings`](void_genesis_ide/src/vs/workbench/contrib/void/common/modelCapabilities.ts:1035)
 
+Crux as source of truth:
+
+- Mistral model capabilities (including Magistral variants) are cataloged in Crux:
+  - [`mistral.yaml`](crux/crux_providers/catalog/providers/mistral.yaml:1)
+- The IDE’s [`mistralModelOptions`](void_genesis_ide/src/vs/workbench/contrib/void/common/modelCapabilities.ts:960) map is now a thin adapter / fallback; canonical values should be changed in Crux and consumed via [`/api/models`](crux/crux_providers/service/app.py:1).
+
 ### 3.7 Groq (`groq`)
 
 - Default models: [`defaultModelsOfProvider.groq`](void_genesis_ide/src/vs/workbench/contrib/void/common/modelCapabilities.ts:137)
@@ -409,6 +437,12 @@ Provider reasoning:
 
 - Requires `reasoning_format: 'parsed'` on input and exposes `reasoning` field on output:
   - [`groqSettings`](void_genesis_ide/src/vs/workbench/contrib/void/common/modelCapabilities.ts:1082)
+
+Crux as source of truth:
+
+- Groq models (Qwen/QwQ, Llama variants, etc.) are defined in:
+  - [`groq.yaml`](crux/crux_providers/catalog/providers/groq.yaml:1)
+- The IDE-side [`groqModelOptions`](void_genesis_ide/src/vs/workbench/contrib/void/common/modelCapabilities.ts:1045) map has been slimmed to rely on Crux metadata delivered via [`/api/models`](crux/crux_providers/service/app.py:1).
 
 ### 3.8 OpenRouter (`openRouter`)
 
@@ -437,6 +471,12 @@ Reasoning:
 - Reasoning payload is encoded under `reasoning` as per OpenRouter’s API:
   - Supports both budget-based and effort-based reasoning sliders.
 
+Crux as source of truth:
+
+- Canonical OpenRouter model entries (Claude, Qwen/QwQ, Deepseek, Mistral, Gemini proxies, etc.) live in:
+  - [`openrouter.yaml`](crux/crux_providers/catalog/providers/openrouter.yaml:1)
+- The IDE’s [`openRouterModelOptions_assumingOpenAICompat`](void_genesis_ide/src/vs/workbench/contrib/void/common/modelCapabilities.ts:1267) map is treated as an adapter over Crux metadata, not an independent registry; new models should be added to the Crux catalog and then surfaced via [`/api/models`](crux/crux_providers/service/app.py:1).
+
 ### 3.9 Self-hosted / Local Providers
 
 These use extensive fallback logic via:
@@ -455,18 +495,18 @@ These use extensive fallback logic via:
 
 #### 3.9.2 Ollama (`ollama`)
 
-- Model table: [`ollamaModelOptions`](void_genesis_ide/src/vs/workbench/contrib/void/common/modelCapabilities.ts:1138)
-- Includes curated entries like:
+- Canonical model catalog:
 
-  - `qwen2.5-coder:*`
-  - `llama3.1`
-  - `qwq`
-  - `deepseek-r1`
-  - `devstral:latest`
+  - Per-model semantics (context windows, tool formats, reasoning support, download sizes) live in Crux’s catalog:
+    - [`ollama.yaml`](crux/crux_providers/catalog/providers/ollama.yaml:1)
+  - Served to the IDE via [`/api/models`](crux/crux_providers/service/app.py:1) and merged in through the Crux overlay in [`modelCapabilities.ts`](void_genesis_ide/src/vs/workbench/contrib/void/common/modelCapabilities.ts:1).
 
-- Recommended models: [`ollamaRecommendedModels`](void_genesis_ide/src/vs/workbench/contrib/void/common/modelCapabilities.ts:1214)
+- IDE adapter & recommendations:
 
-  - `['qwen2.5-coder:1.5b', 'llama3.1', 'qwq', 'deepseek-r1', 'devstral:latest']`
+  - `ollamaModelOptions` in [`modelCapabilities.ts`](void_genesis_ide/src/vs/workbench/contrib/void/common/modelCapabilities.ts:1138) is now intentionally minimal and primarily relies on `extensiveModelOptionsFallback`.
+  - [`ollamaRecommendedModels`](void_genesis_ide/src/vs/workbench/contrib/void/common/modelCapabilities.ts:1214) is an IDE-local list of suggested model names for the UI:
+
+    - `['qwen2.5-coder:1.5b', 'llama3.1', 'qwq', 'deepseek-r1', 'devstral:latest']`
 
 - Reasoning:
 
@@ -515,11 +555,13 @@ When modifying model capabilities:
 
 1. **Preferred change process**
 
-   - Make changes in:
-     - [`modelCapabilities.ts`](void_genesis_ide/src/vs/workbench/contrib/void/common/modelCapabilities.ts:1)
-     - And if necessary, in:
-       - [`convertToLLMMessageService.ts`](void_genesis_ide/src/vs/workbench/contrib/void/browser/convertToLLMMessageService.ts:243)
-       - [`sendLLMMessage.impl.ts`](void_genesis_ide/src/vs/workbench/contrib/void/electron-main/llmMessage/sendLLMMessage.impl.ts:273)
+   - Make canonical provider/model changes in **Crux**:
+     - Edit or add catalog entries under [`crux_providers/catalog/providers/*.yaml`](crux/crux_providers/catalog/providers/openai.yaml:1).
+     - Ensure they are loaded into SQLite and exposed via [`/api/models`](crux/crux_providers/service/app.py:1) / [`/api/providers`](crux/crux_providers/service/app.py:1). See [`CRUX_INTEGRATION.md`](docs/crux_integration/CRUX_INTEGRATION.md:1) for details.
+   - In the IDE, adjust only the adapter layer when necessary:
+     - [`modelCapabilities.ts`](void_genesis_ide/src/vs/workbench/contrib/void/common/modelCapabilities.ts:1) for provider settings, heuristics, and reasoning I/O.
+     - [`convertToLLMMessageService.ts`](void_genesis_ide/src/vs/workbench/contrib/void/browser/convertToLLMMessageService.ts:243) for truncation and budgeting behavior.
+     - [`sendLLMMessage.impl.ts`](void_genesis_ide/src/vs/workbench/contrib/void/electron-main/llmMessage/sendLLMMessage.impl.ts:273) for request wiring and provider-specific message shapes.
    - Update this document to reflect:
      - New models or providers.
      - Changes to `contextWindow`, `reservedOutputTokenSpace`, or tool formats.
@@ -534,21 +576,23 @@ When modifying model capabilities:
 
 3. **Adding new providers**
 
-   - When adding a new provider:
-     - Implement a `VoidStaticProviderInfo` entry in `modelSettingsOfProvider`.
+   - When adding a new provider, start in **Crux**:
+     - Add a new provider catalog file under [`crux_providers/catalog/providers`](crux/crux_providers/catalog/providers/openai.yaml:1) and wire it into the catalog loader.
+     - Expose the provider and its models via [`/api/providers`](crux/crux_providers/service/app.py:1) and [`/api/models`](crux/crux_providers/service/app.py:1).
+   - Then, in the IDE (adapter layer only):
+     - Implement a `VoidStaticProviderInfo` entry in `modelSettingsOfProvider` inside [`modelCapabilities.ts`](void_genesis_ide/src/vs/workbench/contrib/void/common/modelCapabilities.ts:1).
      - Decide:
-       - Default `modelOptions`.
-       - `modelOptionsFallback` behavior (heuristics).
+       - Any provider-specific defaults that are not present in Crux (for example, UI defaults).
+       - `modelOptionsFallback` behavior (heuristics for unknown/legacy names).
        - `providerReasoningIOSettings`.
      - Document the new provider and any default models here.
 
 4. **Adding new models**
 
-   - For deterministic behavior on known models, prefer:
-     - Listing them explicitly in the appropriate `*ModelOptions` map.
-   - Use `modelOptionsFallback` heuristics only when:
-     - Models share characteristics with known siblings (e.g., `gpt-4.1-mini` vs `gpt-4.1-nano`).
-     - You need robust behavior across many minor variants.
+   - For most providers, add new models to the **Crux catalog YAML** and let them flow into the IDE via the Crux overlay (`/api/models` + overlay merge logic in [`modelCapabilities.ts`](void_genesis_ide/src/vs/workbench/contrib/void/common/modelCapabilities.ts:1)).
+   - Only add explicit entries in `*ModelOptions` when:
+     - You need adapter-local overrides or special-cased behavior for a specific model.
+     - You need robust behavior across many minor variants and Crux metadata alone is insufficient.
 
 5. **Fallback sanity checks**
 

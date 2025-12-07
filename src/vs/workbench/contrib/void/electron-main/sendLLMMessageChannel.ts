@@ -1,7 +1,4 @@
-/*--------------------------------------------------------------------------------------
- *  Copyright 2025 Glass Devtools, Inc. All rights reserved.
- *  Licensed under the Apache License, Version 2.0. See LICENSE.txt for more information.
- *--------------------------------------------------------------------------------------*/
+// IPC channel for LLM message requests between renderer and main process.
 
 // registered in app.ts
 // code convention is to make a service responsible for this stuff, and not a channel, but having fewer files is simpler...
@@ -144,7 +141,7 @@ export class LLMMessageChannel implements IServerChannel {
 			onSuccess: (p) => { emitters.success.fire({ requestId, ...p }); },
 			onError: (p) => { emitters.error.fire({ requestId, ...p }); },
 		}
-		sendLLMMessageToProviderImplementation.ollama.list(mainThreadParams)
+		sendLLMMessageToProviderImplementation.ollama.list(mainThreadParams as any)
 	}
 
 	_callOpenAIList = (params: MainModelListParams<OpenaiCompatibleModelResponse>) => {

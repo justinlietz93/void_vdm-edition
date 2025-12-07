@@ -6,7 +6,6 @@ import {
 	OnFinalMessage,
 	OnText,
 	RawToolCallObj,
-	RawToolParamsObj,
 } from '../../common/sendLLMMessageTypes.js';
 import {
 	ChatMode,
@@ -15,9 +14,26 @@ import {
 	ProviderName,
 	SettingsOfProvider,
 } from '../../common/voidSettingsTypes.js';
-import { getModelCapabilities } from '../../common/modelCapabilities.js';
-import { generateUuid } from '../../../../../base/common/uuid.js';
-import { cruxGetModelsForProvider, cruxPostKeys, cruxStreamChat, CruxChatRequest } from './cruxBridge.js';
+import { getModelCapabilities, setCruxModelCapabilitiesOverlayForProvider } from '../../common/modelCapabilities.js';
+import { cruxGetModelsForProvider, cruxPostChat, cruxStreamChat, CruxChatRequest } from './cruxBridge.js';
+import { buildCruxCapabilitiesOverlayForModels } from './cruxModelOverlay.js';
+import { ensureCruxHasKeyFromSettings } from './cruxKeySync.js';
+
+/**
+ * Streaming timeout configuration for Crux chat.
+ *
+ * These bounds are intentionally conservative and are meant to:
+ * - prevent the UI from hanging indefinitely on misbehaving streams
+ * - allow long-running, but active, streams to proceed (e.g. tool-heavy flows)
+ *
+ * Idle timeout:
+ *   Abort when no data is received for this many milliseconds.
+ *
+ * Total timeout:
+ *   Hard upper bound on wall-clock duration of a single streaming request.
+ */
+const STREAM_IDLE_TIMEOUT_MS = 30_000; // 30s of no activity is treated as an error.
+const STREAM_TOTAL_TIMEOUT_MS = 5 * 60_000; // 5 minutes total per request.
 
 type InternalCommonMessageParams = {
 	onText: OnText;
@@ -80,34 +96,7 @@ const toCruxProviderName = (providerName: ProviderName): string => {
 	return cruxProviderMap[providerName] ?? providerName.toLowerCase();
 };
 
-// Map Void providerName to Crux env var for API key persistence
-const cruxEnvVarOfProvider: Partial<Record<ProviderName, string>> = {
-	openAI: 'OPENAI_API_KEY',
-	openAICompatible: 'OPENAI_API_KEY',
-	openRouter: 'OPENROUTER_API_KEY',
-	anthropic: 'ANTHROPIC_API_KEY',
-	deepseek: 'DEEPSEEK_API_KEY',
-	gemini: 'GEMINI_API_KEY',
-	xAI: 'XAI_API_KEY',
-};
-
-const cruxKeyCache: Record<string, string | undefined> = {};
-
-const ensureCruxHasKey = async (
-	providerName: ProviderName,
-	settingsOfProvider: SettingsOfProvider,
-): Promise<void> => {
-	const envName = cruxEnvVarOfProvider[providerName];
-	if (!envName) return;
-
-	const key = (settingsOfProvider as any)?.[providerName]?.apiKey as string | undefined;
-	if (!key) return;
-
-	if (cruxKeyCache[envName] === key) return;
-
-	await cruxPostKeys({ [envName]: key });
-	cruxKeyCache[envName] = key;
-};
+ // Key synchronization for Crux (provider -> env var) is handled by helpers in ./cruxKeySync.ts.
 
 const ensureCruxProviderSupported = (
 	providerName: ProviderName,
@@ -141,38 +130,6 @@ const buildCruxMessages = (
 	return cruxMessages;
 };
 
-const toolCallFromCruxParts = (parts: any[]): RawToolCallObj | null => {
-	if (!Array.isArray(parts)) return null;
-	const toolPart = parts.find((p) => p && typeof p === 'object' && p.type === 'tool_call');
-	if (!toolPart || typeof toolPart !== 'object') return null;
-
-	const data: any = (toolPart as any).data || {};
-	const name = typeof data.name === 'string' ? data.name : '';
-	const args = typeof data.arguments === 'object' && data.arguments !== null ? data.arguments : {};
-	const id = typeof data.id === 'string' && data.id ? data.id : generateUuid();
-
-	const rawParams: RawToolParamsObj = args;
-	return {
-		id,
-		name,
-		rawParams,
-		doneParams: Object.keys(rawParams),
-		isDone: true,
-	};
-};
-
-const textFromCruxResponse = (response: any): string => {
-	if (typeof response?.text === 'string') {
-		return response.text;
-	}
-	if (Array.isArray(response?.parts)) {
-		return response.parts
-			.map((p: any) => (typeof p?.text === 'string' ? p.text : ''))
-			.join('');
-	}
-	return '';
-};
-
 const sendChatViaCrux = async (params: SendChatParams_Internal) => {
 	const {
 		messages,
@@ -190,7 +147,7 @@ const sendChatViaCrux = async (params: SendChatParams_Internal) => {
 	const cruxProvider = ensureCruxProviderSupported(providerName, onError);
 	if (!cruxProvider) return;
 
-	await ensureCruxHasKey(providerName, settingsOfProvider);
+	await ensureCruxHasKeyFromSettings(providerName, settingsOfProvider);
 
 	const { modelName } = getModelCapabilities(providerName, modelNameFromUser, overridesOfModel);
 
@@ -199,6 +156,28 @@ const sendChatViaCrux = async (params: SendChatParams_Internal) => {
 		model: modelName,
 		messages: buildCruxMessages(messages, separateSystemMessage),
 		extra: { feature: 'Chat' },
+	};
+
+	const nonStreamingFallback = async () => {
+		const payload = await cruxPostChat(request);
+		const resp: any = (payload as any).response;
+		const fullText = typeof resp?.text === 'string'
+			? resp.text
+			: Array.isArray(resp?.parts)
+				? resp.parts.map((p: any) => (typeof p?.text === 'string' ? p.text : '')).join('')
+				: '';
+
+		if (!fullText) {
+			onError({ message: 'Void: Response from Crux /api/chat was empty.', fullError: null });
+			return;
+		}
+
+		onText({ fullText, fullReasoning: '', toolCall: undefined });
+		onFinalMessage({
+			fullText,
+			fullReasoning: '',
+			anthropicReasoning: null,
+		});
 	};
 
 	try {
@@ -210,9 +189,59 @@ const sendChatViaCrux = async (params: SendChatParams_Internal) => {
 		let finalSeen = false;
 		let errored = false;
 
+		let idleTimer: any = null;
+		let totalTimer: any = null;
+
+		const clearTimers = () => {
+			if (idleTimer) {
+				clearTimeout(idleTimer);
+				idleTimer = null;
+			}
+			if (totalTimer) {
+				clearTimeout(totalTimer);
+				totalTimer = null;
+			}
+		};
+
+		const scheduleIdleTimer = () => {
+			if (idleTimer) {
+				clearTimeout(idleTimer);
+			}
+			idleTimer = setTimeout(() => {
+				if (errored || finalSeen) {
+					return;
+				}
+				errored = true;
+				onError({
+					message: 'Void: LLM stream timed out due to inactivity.',
+					fullError: null,
+				});
+				controller.abort();
+			}, STREAM_IDLE_TIMEOUT_MS);
+		};
+
+		// Hard wall-clock limit for the entire streaming request.
+		totalTimer = setTimeout(() => {
+			if (errored || finalSeen) {
+				return;
+			}
+			errored = true;
+			onError({
+				message: 'Void: LLM stream exceeded maximum duration.',
+				fullError: null,
+			});
+			controller.abort();
+		}, STREAM_TOTAL_TIMEOUT_MS);
+
+		// Arm the idle timer before starting the stream.
+		scheduleIdleTimer();
+
 		await cruxStreamChat(
 			request,
 			(chunk) => {
+				// Any chunk (delta or control) counts as activity and resets the idle timer.
+				scheduleIdleTimer();
+
 				if (chunk.error) {
 					errored = true;
 					onError({ message: chunk.error, fullError: null });
@@ -231,6 +260,8 @@ const sendChatViaCrux = async (params: SendChatParams_Internal) => {
 			controller.signal,
 		);
 
+		clearTimers();
+
 		if (errored) return;
 
 		if (!finalSeen && !fullText && !toolCall) {
@@ -247,7 +278,28 @@ const sendChatViaCrux = async (params: SendChatParams_Internal) => {
 			...toolCallObj,
 		});
 	} catch (error) {
+		// Ensure timers are cleared on any failure path.
+		// If we already surfaced an error via a timeout/abort, avoid double-reporting.
+		// Many runtimes surface aborts as an Error with name "AbortError".
+		const errName = (error as any)?.name;
+		if (errName === 'AbortError') {
+			// timers may have already been cleared in the success path, but calling again is safe
+			// eslint-disable-next-line no-unsafe-finally
+			return;
+		}
+
+		// If the streaming endpoint is missing (older Crux), fall back to non-streaming chat.
 		const message = error instanceof Error ? `${error}` : String(error);
+		if (message.includes('/api/chat/stream') && message.includes('404')) {
+			try {
+				await nonStreamingFallback();
+				return;
+			} catch (fallbackError) {
+				const fallbackMsg = fallbackError instanceof Error ? `${fallbackError}` : String(fallbackError);
+				onError({ message: fallbackMsg, fullError: fallbackError instanceof Error ? fallbackError : null });
+				return;
+			}
+		}
 		onError({ message, fullError: error instanceof Error ? error : null });
 	}
 };
@@ -260,20 +312,13 @@ const sendFIMViaCruxUnsupported = ({ onError, providerName, _setAborter }: SendF
 	});
 };
 
-type CruxListedModel = {
-	id: string;
-	created: number;
-	object: string;
-	owned_by: string;
-};
-
-const listModelsViaCrux = async <TModel extends CruxListedModel>({
+const listModelsViaCrux = async ({
 	providerName,
 	settingsOfProvider,
 	onSuccess: onSuccess_,
 	onError: onError_,
-}: ListParams_Internal<TModel>) => {
-	const onSuccess = ({ models }: { models: TModel[] }) => onSuccess_({ models });
+}: ListParams_Internal<any>) => {
+	const onSuccess = ({ models }: { models: any[] }) => onSuccess_({ models });
 	const onError = ({ error }: { error: string }) => onError_({ error });
 
 	const cruxProvider = toCruxProviderName(providerName);
@@ -282,11 +327,23 @@ const listModelsViaCrux = async <TModel extends CruxListedModel>({
 		return;
 	}
 
-	await ensureCruxHasKey(providerName, settingsOfProvider);
+	await ensureCruxHasKeyFromSettings(providerName, settingsOfProvider);
 
 	try {
 		const cruxModels = await cruxGetModelsForProvider(cruxProvider, true);
-		const models: TModel[] = cruxModels.map((m) => {
+
+		// Update the in-memory capability overlay for this provider so that
+		// subsequent calls to `getModelCapabilities` can rely on Crux as the
+		// primary source of truth for high-level behavior (system messages,
+		// tool format, FIM support, context window, etc.).
+		try {
+			const overlays = buildCruxCapabilitiesOverlayForModels(cruxModels);
+			setCruxModelCapabilitiesOverlayForProvider(providerName, overlays);
+		} catch (err) {
+			console.error('[Void][CruxModelOverlay] Failed to build or register overlay for provider', providerName, err);
+		}
+
+		const models: any[] = cruxModels.map((m) => {
 			const raw = ((m.metadata as any)?.raw ?? {}) as any;
 
 			const created =
@@ -304,8 +361,8 @@ const listModelsViaCrux = async <TModel extends CruxListedModel>({
 				created,
 				object: 'model',
 				owned_by,
-			} as unknown as TModel;
-		});
+			};
+		}) as any[];
 
 		onSuccess({ models });
 	} catch (error) {

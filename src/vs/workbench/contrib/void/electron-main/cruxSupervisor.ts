@@ -19,6 +19,7 @@
  */
 
 import { ChildProcess, spawn } from 'child_process';
+import net from 'node:net';
 import { join } from 'node:path';
 import { existsSync } from 'node:fs';
 
@@ -73,6 +74,35 @@ export interface CruxSupervisorOptions {
  */
 function delay(ms: number): Promise<void> {
 	return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/**
+ * Check if a TCP port is free on the given host.
+ */
+async function isPortFree(host: string, port: number): Promise<boolean> {
+	return new Promise((resolve) => {
+		const server = net.createServer()
+			.once('error', () => resolve(false))
+			.once('listening', () => {
+				server.close(() => resolve(true));
+			})
+			.listen(port, host);
+	});
+}
+
+/**
+ * Return true if an existing Crux responds healthy at the given base URL.
+ */
+async function isCruxHealthy(baseUrl: string): Promise<boolean> {
+	const healthUrl = `${baseUrl}/api/health`;
+	try {
+		const response = await fetch(healthUrl, { method: 'GET' });
+		if (!response.ok) return false;
+		const data: any = await response.json().catch(() => ({}));
+		return data && typeof data === 'object' && (data as any).ok === true;
+	} catch {
+		return false;
+	}
 }
 
 /**
@@ -143,9 +173,16 @@ export class CruxSupervisor {
 
 	private async doStart(): Promise<void> {
 		const host = this.options.host ?? '127.0.0.1';
-		const port = this.options.port ?? 8091;
-		const baseUrl = `http://${host}:${port}`;
-		this.baseUrl = baseUrl;
+		let port = this.options.port ?? 8091;
+		let baseUrl = `http://${host}:${port}`;
+
+		// If another IDE instance already has a healthy Crux on this port, reuse it.
+		if (await isCruxHealthy(baseUrl)) {
+			this.baseUrl = baseUrl;
+			setCruxBaseUrl(baseUrl);
+			this.logService.info('[CruxSupervisor] Reusing existing Crux at', baseUrl);
+			return;
+		}
 
 		const pythonCommand = this.options.pythonCommand ?? process.env.VOID_PYTHON_PATH ?? 'python';
 
@@ -185,6 +222,26 @@ export class CruxSupervisor {
 
 		this.logService.info('[CruxSupervisor] Spawning Crux dev server...', { pythonCommand, cwd, host, port });
 
+		// If the preferred port is busy and not healthy, pick the next available up to a few tries.
+		let attempts = 0;
+		while (!(await isPortFree(host, port))) {
+			attempts++;
+			if (await isCruxHealthy(`http://${host}:${port}`)) {
+				baseUrl = `http://${host}:${port}`;
+				this.baseUrl = baseUrl;
+				setCruxBaseUrl(baseUrl);
+				this.logService.info('[CruxSupervisor] Reusing existing Crux at', baseUrl);
+				return;
+			}
+			port += 1;
+			if (attempts > 10) {
+				throw new Error('[CruxSupervisor] Could not find a free port for Crux after 10 attempts.');
+			}
+		}
+
+		baseUrl = `http://${host}:${port}`;
+		this.baseUrl = baseUrl;
+
 		// Spawn the dev server:
 		//   python -m crux_providers.service.dev_server
 		const child = spawn(
@@ -194,7 +251,10 @@ export class CruxSupervisor {
 				cwd,
 				env: {
 					...process.env,
-					// Allow users to override host/port in the future if dev_server.py honors them.
+					PYTHONIOENCODING: 'utf-8',
+					PYTHONUTF8: '1',
+					// Ensure single-process uvicorn so we can shut it down cleanly (reload spawns children).
+					PROVIDER_SERVICE_RELOAD: 'false',
 					PROVIDER_SERVICE_HOST: host,
 					PROVIDER_SERVICE_PORT: String(port),
 				},
@@ -285,7 +345,12 @@ export class CruxSupervisor {
 				if (!child.killed) {
 					this.logService.warn('[CruxSupervisor] Forcibly killing Crux process after timeout.');
 					try {
-						child.kill('SIGKILL');
+						if (process.platform === 'win32') {
+							// Kill process tree on Windows to avoid orphan uvicorn workers.
+							spawn('taskkill', ['/PID', String(child.pid), '/T', '/F']);
+						} else {
+							child.kill('SIGKILL');
+						}
 					} catch {
 						// ignore
 					}
@@ -303,7 +368,11 @@ export class CruxSupervisor {
 			try {
 				// Try graceful termination first.
 				if (!child.killed) {
-					child.kill('SIGTERM');
+					if (process.platform === 'win32') {
+						spawn('taskkill', ['/PID', String(child.pid), '/T', '/F']);
+					} else {
+						child.kill('SIGTERM');
+					}
 				}
 			} catch {
 				// Ignore errors when sending signals; we will rely on the timeout.

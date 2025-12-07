@@ -1,11 +1,26 @@
-/*--------------------------------------------------------------------------------------
- *  Copyright 2025 Glass Devtools, Inc. All rights reserved.
- *  Licensed under the Apache License, Version 2.0. See LICENSE.txt for more information.
- *--------------------------------------------------------------------------------------*/
-
+// TODO This file needs to be reduced to <500 LOC (extract code into a subfolder with separate files)
 import { FeatureName, ModelSelectionOptions, OverridesOfModel, ProviderName } from './voidSettingsTypes.js';
+import {
+ 	VoidStaticModelInfo,
+ 	VoidStaticProviderInfo,
+ 	SendableReasoningInfo,
+ 	defaultModelOptions,
+ } from './modelCapabilities/types.js';
+import {
+	getCruxOverlayForModel,
+	setCruxModelCapabilitiesOverlayForProvider as _setCruxModelCapabilitiesOverlayForProvider,
+} from './modelCapabilities/cruxOverlay.js';
 
+export type {
+	VoidStaticModelInfo,
+	ModelOverrides,
+	ProviderReasoningIOSettings,
+	VoidStaticProviderInfo,
+	SendableReasoningInfo,
+} from './modelCapabilities/types.js';
 
+export { modelOverrideKeys } from './modelCapabilities/types.js';
+export { _setCruxModelCapabilitiesOverlayForProvider as setCruxModelCapabilitiesOverlayForProvider };
 
 
 
@@ -72,184 +87,54 @@ export const defaultProviderSettings = {
 
 
 export const defaultModelsOfProvider = {
-	openAI: [ // https://platform.openai.com/docs/models/gp
-		'gpt-4.1',
-		'gpt-4.1-mini',
-		'gpt-4.1-nano',
-		'o3',
-		'o4-mini',
-		// 'o1',
-		// 'o1-mini',
-		// 'gpt-4o',
-		// 'gpt-4o-mini',
-	],
-	anthropic: [ // https://docs.anthropic.com/en/docs/about-claude/models
-		'claude-opus-4-0',
-		'claude-sonnet-4-0',
-		'claude-3-7-sonnet-latest',
-		'claude-3-5-sonnet-latest',
-		'claude-3-5-haiku-latest',
-		'claude-3-opus-latest',
-	],
-	xAI: [ // https://docs.x.ai/docs/models?cluster=us-east-1
-		'grok-2',
-		'grok-3',
-		'grok-3-mini',
-		'grok-3-fast',
-		'grok-3-mini-fast'
-	],
-	gemini: [ // https://ai.google.dev/gemini-api/docs/models/gemini
-		'gemini-2.5-pro-exp-03-25',
-		'gemini-2.5-flash-preview-04-17',
-		'gemini-2.0-flash',
-		'gemini-2.0-flash-lite',
-		'gemini-2.5-pro-preview-05-06',
-	],
-	deepseek: [ // https://api-docs.deepseek.com/quick_start/pricing
-		'deepseek-chat',
-		'deepseek-reasoner',
-	],
-	ollama: [ // autodetected
-	],
-	vLLM: [ // autodetected
-	],
+	// Default lists removed; models come from Crux registry refresh.
+	openAI: [],
+	anthropic: [],
+	xAI: [],
+	gemini: [],
+	deepseek: [],
+	ollama: [], // autodetected
+	vLLM: [], // autodetected
 	lmStudio: [], // autodetected
-
-	openRouter: [ // https://openrouter.ai/models
-		// 'anthropic/claude-3.7-sonnet:thinking',
-		'anthropic/claude-opus-4',
-		'anthropic/claude-sonnet-4',
-		'qwen/qwen3-235b-a22b',
-		'anthropic/claude-3.7-sonnet',
-		'anthropic/claude-3.5-sonnet',
-		'deepseek/deepseek-r1',
-		'deepseek/deepseek-r1-zero:free',
-		'mistralai/devstral-small:free'
-		// 'openrouter/quasar-alpha',
-		// 'google/gemini-2.5-pro-preview-03-25',
-		// 'mistralai/codestral-2501',
-		// 'qwen/qwen-2.5-coder-32b-instruct',
-		// 'mistralai/mistral-small-3.1-24b-instruct:free',
-		// 'google/gemini-2.0-flash-lite-preview-02-05:free',
-		// 'google/gemini-2.0-pro-exp-02-05:free',
-		// 'google/gemini-2.0-flash-exp:free',
-	],
-	groq: [ // https://console.groq.com/docs/models
-		'qwen-qwq-32b',
-		'llama-3.3-70b-versatile',
-		'llama-3.1-8b-instant',
-		// 'qwen-2.5-coder-32b', // preview mode (experimental)
-	],
-	mistral: [ // https://docs.mistral.ai/getting-started/models/models_overview/
-		'codestral-latest',
-		'devstral-small-latest',
-		'mistral-large-latest',
-		'mistral-medium-latest',
-		'ministral-3b-latest',
-		'ministral-8b-latest',
-	],
+	openRouter: [],
+	groq: [],
+	mistral: [],
 	openAICompatible: [], // fallback
 	googleVertex: [],
 	microsoftAzure: [],
 	awsBedrock: [],
 	liteLLM: [],
-
-
 } as const satisfies Record<ProviderName, string[]>
 
 
 
-export type VoidStaticModelInfo = { // not stateful
-	// Void uses the information below to know how to handle each model.
-	// for some examples, see openAIModelOptions and anthropicModelOptions (below).
-
-	contextWindow: number; // input tokens
-	reservedOutputTokenSpace: number | null; // reserve this much space in the context window for output, defaults to 4096 if null
-
-	supportsSystemMessage: false | 'system-role' | 'developer-role' | 'separated'; // typically you should use 'system-role'. 'separated' means the system message is passed as a separate field (e.g. anthropic)
-	specialToolFormat?: 'openai-style' | 'anthropic-style' | 'gemini-style', // typically you should use 'openai-style'. null means "can't call tools by default", and asks the LLM to output XML in agent mode
-	supportsFIM: boolean; // whether the model was specifically designed for autocomplete or "FIM" ("fill-in-middle" format)
-
-	additionalOpenAIPayload?: { [key: string]: string } // additional payload in the message body for requests that are openai-compatible (ollama, vllm, openai, openrouter, etc)
-
-	// reasoning options
-	reasoningCapabilities: false | {
-		readonly supportsReasoning: true; // for clarity, this must be true if anything below is specified
-		readonly canTurnOffReasoning: boolean; // whether or not the user can disable reasoning mode (false if the model only supports reasoning)
-		readonly canIOReasoning: boolean; // whether or not the model actually outputs reasoning (eg o1 lets us control reasoning but not output it)
-		readonly reasoningReservedOutputTokenSpace?: number; // overrides normal reservedOutputTokenSpace
-		readonly reasoningSlider?:
-		| undefined
-		| { type: 'budget_slider'; min: number; max: number; default: number } // anthropic supports this (reasoning budget)
-		| { type: 'effort_slider'; values: string[]; default: string } // openai-compatible supports this (reasoning effort)
-
-		// if it's open source and specifically outputs think tags, put the think tags here and we'll parse them out (e.g. ollama)
-		readonly openSourceThinkTags?: [string, string];
-
-		// the only other field related to reasoning is "providerReasoningIOSettings", which varies by provider.
-	};
+ // Core capability types (`VoidStaticModelInfo`, `ModelOverrides`,
+ // `ProviderReasoningIOSettings`, `VoidStaticProviderInfo`,
+ // `SendableReasoningInfo`) and `modelOverrideKeys` are defined in
+ // [`types.ts`](void_genesis_ide/src/vs/workbench/contrib/void/common/modelCapabilities/types.ts:1)
+ // and imported at the top of this module.
 
 
-	// --- below is just informative, not used in sending / receiving, cannot be customized in settings ---
-	cost: {
-		input: number;
-		output: number;
-		cache_read?: number;
-		cache_write?: number;
-	}
-	downloadable: false | {
-		sizeGb: number | 'not-known'
-	}
-}
-// if you change the above type, remember to update the Settings link
-
-
-
-export const modelOverrideKeys = [
-	'contextWindow',
-	'reservedOutputTokenSpace',
-	'supportsSystemMessage',
-	'specialToolFormat',
-	'supportsFIM',
-	'reasoningCapabilities',
-	'additionalOpenAIPayload'
-] as const
-
-export type ModelOverrides = Pick<
-	VoidStaticModelInfo,
-	(typeof modelOverrideKeys)[number]
->
-
-
-
-
-type ProviderReasoningIOSettings = {
-	// include this in payload to get reasoning
-	input?: { includeInPayload?: (reasoningState: SendableReasoningInfo) => null | { [key: string]: any }, };
-	// nameOfFieldInDelta: reasoning output is in response.choices[0].delta[deltaReasoningField]
-	// needsManualParse: whether we must manually parse out the <think> tags
-	output?:
-	| { nameOfFieldInDelta?: string, needsManualParse?: undefined, }
-	| { nameOfFieldInDelta?: undefined, needsManualParse?: true, };
-}
-
-type VoidStaticProviderInfo = { // doesn't change (not stateful)
-	providerReasoningIOSettings?: ProviderReasoningIOSettings; // input/output settings around thinking (allowed to be empty) - only applied if the model supports reasoning output
-	modelOptions: { [key: string]: VoidStaticModelInfo };
-	modelOptionsFallback: (modelName: string, fallbackKnownValues?: Partial<VoidStaticModelInfo>) => (VoidStaticModelInfo & { modelName: string, recognizedModelName: string }) | null;
-}
-
-
-
-const defaultModelOptions = {
-	contextWindow: 128_000,
-	reservedOutputTokenSpace: 8_192,
-	cost: { input: 0, output: 0 },
-	downloadable: false,
-	supportsSystemMessage: false,
-	supportsFIM: false,
-	reasoningCapabilities: false,
-} as const satisfies VoidStaticModelInfo
+/**
+ * NOTE [Crux-ADR-002]:
+ *
+ * The tables and defaults in this module are currently the **authoritative
+ * Void-side description** of per-model behavior (context window, system
+ * message semantics, tool format, FIM, reasoning flags, etc.).
+ *
+ * Per the Crux integration ADRs, these definitions are being **lifted into
+ * the embedded Crux provider layer** by exporting them into a structured
+ * catalog (for example a YAML file in the Crux repo) and loading that into
+ * Crux's SQLite-backed model registry via a loader script.
+ *
+ * At runtime, the embedded Crux service exposes this catalog via `/api/models`,
+ * and the IDE overlays those capabilities back on top of these tables so that
+ * both sides stay consistent during the migration. Once the catalog is
+ * stable, this file is expected to shrink into a thin adapter (or be removed
+ * entirely in favor of the Crux-backed catalog).
+ */
+ // `defaultModelOptions` is now imported from
+ // [`types.ts`](void_genesis_ide/src/vs/workbench/contrib/void/common/modelCapabilities/types.ts:1).
 
 // TODO!!! double check all context sizes below
 // TODO!!! add openrouter common models
@@ -390,84 +275,141 @@ const openSourceModelOptions_assumingOAICompat = {
 
 
 
-// keep modelName, but use the fallback's defaults
+ // keep modelName, but use the fallback's defaults
 const extensiveModelOptionsFallback: VoidStaticProviderInfo['modelOptionsFallback'] = (modelName, fallbackKnownValues) => {
 
-	const lower = modelName.toLowerCase()
+	const lower = modelName.toLowerCase();
 
-	const toFallback = <T extends { [s: string]: Omit<VoidStaticModelInfo, 'cost' | 'downloadable'> },>(obj: T, recognizedModelName: string & keyof T)
-		: VoidStaticModelInfo & { modelName: string, recognizedModelName: string } => {
+	const toFallback = <
+		T extends { [s: string]: Omit<VoidStaticModelInfo, 'cost' | 'downloadable'> },
+	>(
+		obj: T,
+		recognizedModelName: string & keyof T,
+	): VoidStaticModelInfo & { modelName: string; recognizedModelName: string } => {
 
-		const opts = obj[recognizedModelName]
-		const supportsSystemMessage = opts.supportsSystemMessage === 'separated'
-			? 'system-role'
-			: opts.supportsSystemMessage
+		const opts = obj[recognizedModelName];
+
+		// If we do not have a static table entry (because canonical model
+		// capabilities now live in Crux), fall back to the generic defaults
+		// and let the Crux overlay supply real metadata when available.
+		if (!opts) {
+			return {
+				...defaultModelOptions,
+				recognizedModelName,
+				modelName,
+				...fallbackKnownValues,
+			};
+		}
+
+		const supportsSystemMessage =
+			opts.supportsSystemMessage === 'separated'
+				? 'system-role'
+				: opts.supportsSystemMessage;
 
 		return {
 			recognizedModelName,
 			modelName,
 			...opts,
-			supportsSystemMessage: supportsSystemMessage,
+			supportsSystemMessage,
 			cost: { input: 0, output: 0 },
 			downloadable: false,
-			...fallbackKnownValues
+			...fallbackKnownValues,
 		};
-	}
+	};
 
-	if (lower.includes('gemini') && (lower.includes('2.5') || lower.includes('2-5'))) return toFallback(geminiModelOptions, 'gemini-2.5-pro-exp-03-25')
+	// Heuristics for common open‑source / OpenAI‑compatible model families.
+	if (lower.includes('gemini') && (lower.includes('2.5') || lower.includes('2-5')))
+		return toFallback(geminiModelOptions, 'gemini-2.5-pro-exp-03-25');
 
-	if (lower.includes('claude-3-5') || lower.includes('claude-3.5')) return toFallback(anthropicModelOptions, 'claude-3-5-sonnet-20241022')
-	if (lower.includes('claude')) return toFallback(anthropicModelOptions, 'claude-3-7-sonnet-20250219')
+	if (lower.includes('claude-3-5') || lower.includes('claude-3.5'))
+		return toFallback(anthropicModelOptions, 'claude-3-5-sonnet-20241022');
+	if (lower.includes('claude'))
+		return toFallback(anthropicModelOptions, 'claude-3-7-sonnet-20250219');
 
-	if (lower.includes('grok2') || lower.includes('grok2')) return toFallback(xAIModelOptions, 'grok-2')
-	if (lower.includes('grok')) return toFallback(xAIModelOptions, 'grok-3')
+	if (lower.includes('grok-2') || lower.includes('grok2'))
+		return toFallback(xAIModelOptions, 'grok-2');
+	if (lower.includes('grok'))
+		return toFallback(xAIModelOptions, 'grok-3');
 
-	if (lower.includes('deepseek-r1') || lower.includes('deepseek-reasoner')) return toFallback(openSourceModelOptions_assumingOAICompat, 'deepseekR1')
-	if (lower.includes('deepseek') && lower.includes('v2')) return toFallback(openSourceModelOptions_assumingOAICompat, 'deepseekCoderV2')
-	if (lower.includes('deepseek')) return toFallback(openSourceModelOptions_assumingOAICompat, 'deepseekCoderV3')
+	if (lower.includes('deepseek-r1') || lower.includes('deepseek-reasoner'))
+		return toFallback(openSourceModelOptions_assumingOAICompat, 'deepseekR1');
+	if (lower.includes('deepseek') && lower.includes('v2'))
+		return toFallback(openSourceModelOptions_assumingOAICompat, 'deepseekCoderV2');
+	if (lower.includes('deepseek'))
+		return toFallback(openSourceModelOptions_assumingOAICompat, 'deepseekCoderV3');
 
-	if (lower.includes('llama3')) return toFallback(openSourceModelOptions_assumingOAICompat, 'llama3')
-	if (lower.includes('llama3.1')) return toFallback(openSourceModelOptions_assumingOAICompat, 'llama3.1')
-	if (lower.includes('llama3.2')) return toFallback(openSourceModelOptions_assumingOAICompat, 'llama3.2')
-	if (lower.includes('llama3.3')) return toFallback(openSourceModelOptions_assumingOAICompat, 'llama3.3')
-	if (lower.includes('llama') || lower.includes('scout')) return toFallback(openSourceModelOptions_assumingOAICompat, 'llama4-scout')
-	if (lower.includes('llama') || lower.includes('maverick')) return toFallback(openSourceModelOptions_assumingOAICompat, 'llama4-scout')
-	if (lower.includes('llama')) return toFallback(openSourceModelOptions_assumingOAICompat, 'llama4-scout')
+	if (lower.includes('llama3'))
+		return toFallback(openSourceModelOptions_assumingOAICompat, 'llama3');
+	if (lower.includes('llama3.1'))
+		return toFallback(openSourceModelOptions_assumingOAICompat, 'llama3.1');
+	if (lower.includes('llama3.2'))
+		return toFallback(openSourceModelOptions_assumingOAICompat, 'llama3.2');
+	if (lower.includes('llama3.3'))
+		return toFallback(openSourceModelOptions_assumingOAICompat, 'llama3.3');
+	if (lower.includes('llama') || lower.includes('scout'))
+		return toFallback(openSourceModelOptions_assumingOAICompat, 'llama4-scout');
+	if (lower.includes('maverick'))
+		return toFallback(openSourceModelOptions_assumingOAICompat, 'llama4-maverick');
 
-	if (lower.includes('qwen') && lower.includes('2.5') && lower.includes('coder')) return toFallback(openSourceModelOptions_assumingOAICompat, 'qwen2.5coder')
-	if (lower.includes('qwen') && lower.includes('3')) return toFallback(openSourceModelOptions_assumingOAICompat, 'qwen3')
-	if (lower.includes('qwen')) return toFallback(openSourceModelOptions_assumingOAICompat, 'qwen3')
-	if (lower.includes('qwq')) { return toFallback(openSourceModelOptions_assumingOAICompat, 'qwq') }
-	if (lower.includes('phi4')) return toFallback(openSourceModelOptions_assumingOAICompat, 'phi4')
-	if (lower.includes('codestral')) return toFallback(openSourceModelOptions_assumingOAICompat, 'codestral')
-	if (lower.includes('devstral')) return toFallback(openSourceModelOptions_assumingOAICompat, 'devstral')
+	if (lower.includes('qwen') && lower.includes('2.5') && lower.includes('coder'))
+		return toFallback(openSourceModelOptions_assumingOAICompat, 'qwen2.5coder');
+	if (lower.includes('qwen') && lower.includes('3'))
+		return toFallback(openSourceModelOptions_assumingOAICompat, 'qwen3');
+	if (lower.includes('qwen'))
+		return toFallback(openSourceModelOptions_assumingOAICompat, 'qwen3');
+	if (lower.includes('qwq'))
+		return toFallback(openSourceModelOptions_assumingOAICompat, 'qwq');
+	if (lower.includes('phi4'))
+		return toFallback(openSourceModelOptions_assumingOAICompat, 'phi4');
+	if (lower.includes('codestral'))
+		return toFallback(openSourceModelOptions_assumingOAICompat, 'codestral');
+	if (lower.includes('devstral'))
+		return toFallback(openSourceModelOptions_assumingOAICompat, 'devstral');
 
-	if (lower.includes('gemma')) return toFallback(openSourceModelOptions_assumingOAICompat, 'gemma')
+	if (lower.includes('gemma'))
+		return toFallback(openSourceModelOptions_assumingOAICompat, 'gemma');
 
-	if (lower.includes('starcoder2')) return toFallback(openSourceModelOptions_assumingOAICompat, 'starcoder2')
+	if (lower.includes('starcoder2'))
+		return toFallback(openSourceModelOptions_assumingOAICompat, 'starcoder2');
 
-	if (lower.includes('openhands')) return toFallback(openSourceModelOptions_assumingOAICompat, 'openhands-lm-32b') // max output uncler
+	if (lower.includes('openhands'))
+		return toFallback(openSourceModelOptions_assumingOAICompat, 'openhands-lm-32b'); // max output unclear
 
-	if (lower.includes('quasar') || lower.includes('quaser')) return toFallback(openSourceModelOptions_assumingOAICompat, 'quasar')
+	if (lower.includes('quasar') || lower.includes('quaser'))
+		return toFallback(openSourceModelOptions_assumingOAICompat, 'quasar');
 
-	if (lower.includes('gpt') && lower.includes('mini') && (lower.includes('4.1') || lower.includes('4-1'))) return toFallback(openAIModelOptions, 'gpt-4.1-mini')
-	if (lower.includes('gpt') && lower.includes('nano') && (lower.includes('4.1') || lower.includes('4-1'))) return toFallback(openAIModelOptions, 'gpt-4.1-nano')
-	if (lower.includes('gpt') && (lower.includes('4.1') || lower.includes('4-1'))) return toFallback(openAIModelOptions, 'gpt-4.1')
+	// Heuristics for GPT / o*-style ids when used via generic OpenAI‑compatible endpoints.
+	if (lower.includes('gpt') && lower.includes('mini') && (lower.includes('4.1') || lower.includes('4-1')))
+		return toFallback(openAIModelOptions, 'gpt-4.1-mini');
+	if (lower.includes('gpt') && lower.includes('nano') && (lower.includes('4.1') || lower.includes('4-1')))
+		return toFallback(openAIModelOptions, 'gpt-4.1-nano');
+	if (lower.includes('gpt') && (lower.includes('4.1') || lower.includes('4-1')))
+		return toFallback(openAIModelOptions, 'gpt-4.1');
 
-	if (lower.includes('4o') && lower.includes('mini')) return toFallback(openAIModelOptions, 'gpt-4o-mini')
-	if (lower.includes('4o')) return toFallback(openAIModelOptions, 'gpt-4o')
+	if (lower.includes('4o') && lower.includes('mini'))
+		return toFallback(openAIModelOptions, 'gpt-4o-mini');
+	if (lower.includes('4o'))
+		return toFallback(openAIModelOptions, 'gpt-4o');
 
-	if (lower.includes('o1') && lower.includes('mini')) return toFallback(openAIModelOptions, 'o1-mini')
-	if (lower.includes('o1')) return toFallback(openAIModelOptions, 'o1')
-	if (lower.includes('o3') && lower.includes('mini')) return toFallback(openAIModelOptions, 'o3-mini')
-	if (lower.includes('o3')) return toFallback(openAIModelOptions, 'o3')
-	if (lower.includes('o4') && lower.includes('mini')) return toFallback(openAIModelOptions, 'o4-mini')
+	if (lower.includes('o1') && lower.includes('mini'))
+		return toFallback(openAIModelOptions, 'o1-mini');
+	if (lower.includes('o1'))
+		return toFallback(openAIModelOptions, 'o1');
+	if (lower.includes('o3') && lower.includes('mini'))
+		return toFallback(openAIModelOptions, 'o3-mini');
+	if (lower.includes('o3'))
+		return toFallback(openAIModelOptions, 'o3');
+	if (lower.includes('o4') && lower.includes('mini'))
+		return toFallback(openAIModelOptions, 'o4-mini');
 
-
+	// Direct lookup against our open‑source table by key.
 	if (Object.keys(openSourceModelOptions_assumingOAICompat).map(k => k.toLowerCase()).includes(lower))
-		return toFallback(openSourceModelOptions_assumingOAICompat, lower as keyof typeof openSourceModelOptions_assumingOAICompat)
+		return toFallback(
+			openSourceModelOptions_assumingOAICompat,
+			lower as keyof typeof openSourceModelOptions_assumingOAICompat,
+		);
 
-	return null
+	return null;
 }
 
 
@@ -475,99 +417,22 @@ const extensiveModelOptionsFallback: VoidStaticProviderInfo['modelOptionsFallbac
 
 
 
-// ---------------- ANTHROPIC ----------------
-const anthropicModelOptions = {
-	'claude-3-7-sonnet-20250219': { // https://docs.anthropic.com/en/docs/about-claude/models/all-models#model-comparison-table
-		contextWindow: 200_000,
-		reservedOutputTokenSpace: 8_192,
-		cost: { input: 3.00, cache_read: 0.30, cache_write: 3.75, output: 15.00 },
-		downloadable: false,
-		supportsFIM: false,
-		specialToolFormat: 'anthropic-style',
-		supportsSystemMessage: 'separated',
-		reasoningCapabilities: {
-			supportsReasoning: true,
-			canTurnOffReasoning: true,
-			canIOReasoning: true,
-			reasoningReservedOutputTokenSpace: 8192, // can bump it to 128_000 with beta mode output-128k-2025-02-19
-			reasoningSlider: { type: 'budget_slider', min: 1024, max: 8192, default: 1024 }, // they recommend batching if max > 32_000. we cap at 8192 because above is typically not necessary (often even buggy)
-		},
-
-	},
-	'claude-opus-4-20250514': {
-		contextWindow: 200_000,
-		reservedOutputTokenSpace: 8_192,
-		cost: { input: 15.00, cache_read: 1.50, cache_write: 18.75, output: 30.00 },
-		downloadable: false,
-		supportsFIM: false,
-		specialToolFormat: 'anthropic-style',
-		supportsSystemMessage: 'separated',
-		reasoningCapabilities: {
-			supportsReasoning: true,
-			canTurnOffReasoning: true,
-			canIOReasoning: true,
-			reasoningReservedOutputTokenSpace: 8192, // can bump it to 128_000 with beta mode output-128k-2025-02-19
-			reasoningSlider: { type: 'budget_slider', min: 1024, max: 8192, default: 1024 }, // they recommend batching if max > 32_000. we cap at 8192 because above is typically not necessary (often even buggy)
-		},
-
-	},
-	'claude-sonnet-4-20250514': {
-		contextWindow: 200_000,
-		reservedOutputTokenSpace: 8_192,
-		cost: { input: 3.00, cache_read: 0.30, cache_write: 3.75, output: 6.00 },
-		downloadable: false,
-		supportsFIM: false,
-		specialToolFormat: 'anthropic-style',
-		supportsSystemMessage: 'separated',
-		reasoningCapabilities: {
-			supportsReasoning: true,
-			canTurnOffReasoning: true,
-			canIOReasoning: true,
-			reasoningReservedOutputTokenSpace: 8192, // can bump it to 128_000 with beta mode output-128k-2025-02-19
-			reasoningSlider: { type: 'budget_slider', min: 1024, max: 8192, default: 1024 }, // they recommend batching if max > 32_000. we cap at 8192 because above is typically not necessary (often even buggy)
-		},
-
-	},
-	'claude-3-5-sonnet-20241022': {
-		contextWindow: 200_000,
-		reservedOutputTokenSpace: 8_192,
-		cost: { input: 3.00, cache_read: 0.30, cache_write: 3.75, output: 15.00 },
-		downloadable: false,
-		supportsFIM: false,
-		specialToolFormat: 'anthropic-style',
-		supportsSystemMessage: 'separated',
-		reasoningCapabilities: false,
-	},
-	'claude-3-5-haiku-20241022': {
-		contextWindow: 200_000,
-		reservedOutputTokenSpace: 8_192,
-		cost: { input: 0.80, cache_read: 0.08, cache_write: 1.00, output: 4.00 },
-		downloadable: false,
-		supportsFIM: false,
-		specialToolFormat: 'anthropic-style',
-		supportsSystemMessage: 'separated',
-		reasoningCapabilities: false,
-	},
-	'claude-3-opus-20240229': {
-		contextWindow: 200_000,
-		reservedOutputTokenSpace: 4_096,
-		cost: { input: 15.00, cache_read: 1.50, cache_write: 18.75, output: 75.00 },
-		downloadable: false,
-		supportsFIM: false,
-		specialToolFormat: 'anthropic-style',
-		supportsSystemMessage: 'separated',
-		reasoningCapabilities: false,
-	},
-	'claude-3-sonnet-20240229': { // no point of using this, but including this for people who put it in
-		contextWindow: 200_000, cost: { input: 3.00, output: 15.00 },
-		downloadable: false,
-		reservedOutputTokenSpace: 4_096,
-		supportsFIM: false,
-		specialToolFormat: 'anthropic-style',
-		supportsSystemMessage: 'separated',
-		reasoningCapabilities: false,
-	}
-} as const satisfies { [s: string]: VoidStaticModelInfo }
+// Static per-provider model tables (ANTHROPIC first, others below).
+//
+// These tables currently encode Void's intended semantics for each model.
+// They are in the process of being extracted into the embedded Crux model
+// catalog (YAML + loader → SQLite), so that the same information lives in
+// one place and is served over `/api/models` to all Void components.
+//
+// Do not treat these as a long-term second brain for providers. When adding
+// or adjusting production models, update the embedded Crux catalog and its
+// tests, and keep this file in sync only as long as it is needed for the
+// migration.
+ // ---------------- ANTHROPIC ----------------
+// Canonical Anthropic model capabilities now live in Crux's catalog
+// (`crux/crux_providers/catalog/providers/anthropic.yaml`). This table is kept
+// empty so that capabilities come from Crux via the overlay.
+const anthropicModelOptions: { [s: string]: VoidStaticModelInfo } = {};
 
 const anthropicSettings: VoidStaticProviderInfo = {
 	providerReasoningIOSettings: {
@@ -583,124 +448,16 @@ const anthropicSettings: VoidStaticProviderInfo = {
 		},
 	},
 	modelOptions: anthropicModelOptions,
-	modelOptionsFallback: (modelName) => {
-		const lower = modelName.toLowerCase()
-		let fallbackName: keyof typeof anthropicModelOptions | null = null
-		if (lower.includes('claude-4-opus') || lower.includes('claude-opus-4')) fallbackName = 'claude-opus-4-20250514'
-		if (lower.includes('claude-4-sonnet') || lower.includes('claude-sonnet-4')) fallbackName = 'claude-sonnet-4-20250514'
-
-
-		if (lower.includes('claude-3-7-sonnet')) fallbackName = 'claude-3-7-sonnet-20250219'
-		if (lower.includes('claude-3-5-sonnet')) fallbackName = 'claude-3-5-sonnet-20241022'
-		if (lower.includes('claude-3-5-haiku')) fallbackName = 'claude-3-5-haiku-20241022'
-		if (lower.includes('claude-3-opus')) fallbackName = 'claude-3-opus-20240229'
-		if (lower.includes('claude-3-sonnet')) fallbackName = 'claude-3-sonnet-20240229'
-		if (fallbackName) return { modelName: fallbackName, recognizedModelName: fallbackName, ...anthropicModelOptions[fallbackName] }
-		return null
-	},
+	modelOptionsFallback: extensiveModelOptionsFallback,
 }
 
 
-// ---------------- OPENAI ----------------
-const openAIModelOptions = { // https://platform.openai.com/docs/pricing
-	'o3': {
-		contextWindow: 1_047_576,
-		reservedOutputTokenSpace: 32_768,
-		cost: { input: 10.00, output: 40.00, cache_read: 2.50 },
-		downloadable: false,
-		supportsFIM: false,
-		specialToolFormat: 'openai-style',
-		supportsSystemMessage: 'developer-role',
-		reasoningCapabilities: { supportsReasoning: true, canTurnOffReasoning: false, canIOReasoning: false, reasoningSlider: { type: 'effort_slider', values: ['low', 'medium', 'high'], default: 'low' } },
-	},
-	'o4-mini': {
-		contextWindow: 1_047_576,
-		reservedOutputTokenSpace: 32_768,
-		cost: { input: 1.10, output: 4.40, cache_read: 0.275 },
-		downloadable: false,
-		supportsFIM: false,
-		specialToolFormat: 'openai-style',
-		supportsSystemMessage: 'developer-role',
-		reasoningCapabilities: { supportsReasoning: true, canTurnOffReasoning: false, canIOReasoning: false, reasoningSlider: { type: 'effort_slider', values: ['low', 'medium', 'high'], default: 'low' } },
-	},
-	'gpt-4.1': {
-		contextWindow: 1_047_576,
-		reservedOutputTokenSpace: 32_768,
-		cost: { input: 2.00, output: 8.00, cache_read: 0.50 },
-		downloadable: false,
-		supportsFIM: false,
-		specialToolFormat: 'openai-style',
-		supportsSystemMessage: 'developer-role',
-		reasoningCapabilities: false,
-	},
-	'gpt-4.1-mini': {
-		contextWindow: 1_047_576,
-		reservedOutputTokenSpace: 32_768,
-		cost: { input: 0.40, output: 1.60, cache_read: 0.10 },
-		downloadable: false,
-		supportsFIM: false,
-		specialToolFormat: 'openai-style',
-		supportsSystemMessage: 'developer-role',
-		reasoningCapabilities: false,
-	},
-	'gpt-4.1-nano': {
-		contextWindow: 1_047_576,
-		reservedOutputTokenSpace: 32_768,
-		cost: { input: 0.10, output: 0.40, cache_read: 0.03 },
-		downloadable: false,
-		supportsFIM: false,
-		specialToolFormat: 'openai-style',
-		supportsSystemMessage: 'developer-role',
-		reasoningCapabilities: false,
-	},
-	'o1': {
-		contextWindow: 128_000,
-		reservedOutputTokenSpace: 100_000,
-		cost: { input: 15.00, cache_read: 7.50, output: 60.00, },
-		downloadable: false,
-		supportsFIM: false,
-		supportsSystemMessage: 'developer-role',
-		reasoningCapabilities: { supportsReasoning: true, canTurnOffReasoning: false, canIOReasoning: false, reasoningSlider: { type: 'effort_slider', values: ['low', 'medium', 'high'], default: 'low' } },
-	},
-	'o3-mini': {
-		contextWindow: 200_000,
-		reservedOutputTokenSpace: 100_000,
-		cost: { input: 1.10, cache_read: 0.55, output: 4.40, },
-		downloadable: false,
-		supportsFIM: false,
-		supportsSystemMessage: 'developer-role',
-		reasoningCapabilities: { supportsReasoning: true, canTurnOffReasoning: false, canIOReasoning: false, reasoningSlider: { type: 'effort_slider', values: ['low', 'medium', 'high'], default: 'low' } },
-	},
-	'gpt-4o': {
-		contextWindow: 128_000,
-		reservedOutputTokenSpace: 16_384,
-		cost: { input: 2.50, cache_read: 1.25, output: 10.00, },
-		downloadable: false,
-		supportsFIM: false,
-		specialToolFormat: 'openai-style',
-		supportsSystemMessage: 'system-role',
-		reasoningCapabilities: false,
-	},
-	'o1-mini': {
-		contextWindow: 128_000,
-		reservedOutputTokenSpace: 65_536,
-		cost: { input: 1.10, cache_read: 0.55, output: 4.40, },
-		downloadable: false,
-		supportsFIM: false,
-		supportsSystemMessage: false, // does not support any system
-		reasoningCapabilities: { supportsReasoning: true, canTurnOffReasoning: false, canIOReasoning: false, reasoningSlider: { type: 'effort_slider', values: ['low', 'medium', 'high'], default: 'low' } },
-	},
-	'gpt-4o-mini': {
-		contextWindow: 128_000,
-		reservedOutputTokenSpace: 16_384,
-		cost: { input: 0.15, cache_read: 0.075, output: 0.60, },
-		downloadable: false,
-		supportsFIM: false,
-		specialToolFormat: 'openai-style',
-		supportsSystemMessage: 'system-role', // ??
-		reasoningCapabilities: false,
-	},
-} as const satisfies { [s: string]: VoidStaticModelInfo }
+ // ---------------- OPENAI ----------------
+ // Canonical OpenAI model capabilities now live in Crux's catalog
+ // (`crux/crux_providers/catalog/providers/openai.yaml`). This table is kept
+ // empty so that capabilities come from Crux via the overlay and
+ // `extensiveModelOptionsFallback` heuristics for OpenAI‑compatible endpoints.
+const openAIModelOptions: { [s: string]: VoidStaticModelInfo } = {};
 
 
 // https://platform.openai.com/docs/guides/reasoning?api-mode=chat
@@ -715,15 +472,10 @@ const openAICompatIncludeInPayloadReasoning = (reasoningInfo: SendableReasoningI
 
 const openAISettings: VoidStaticProviderInfo = {
 	modelOptions: openAIModelOptions,
-	modelOptionsFallback: (modelName) => {
-		const lower = modelName.toLowerCase()
-		let fallbackName: keyof typeof openAIModelOptions | null = null
-		if (lower.includes('o1')) { fallbackName = 'o1' }
-		if (lower.includes('o3-mini')) { fallbackName = 'o3-mini' }
-		if (lower.includes('gpt-4o')) { fallbackName = 'gpt-4o' }
-		if (fallbackName) return { modelName: fallbackName, recognizedModelName: fallbackName, ...openAIModelOptions[fallbackName] }
-		return null
-	},
+	// Use the shared heuristic fallback so that OpenAI model capabilities are
+	// primarily driven by Crux's catalog (via overlay) plus the generic
+	// `extensiveModelOptionsFallback` logic for GPT/o*-style ids.
+	modelOptionsFallback: (modelName) => extensiveModelOptionsFallback(modelName),
 	providerReasoningIOSettings: {
 		input: { includeInPayload: openAICompatIncludeInPayloadReasoning },
 	},
@@ -804,123 +556,21 @@ const xAISettings: VoidStaticProviderInfo = {
 }
 
 
-// ---------------- GEMINI ----------------
-const geminiModelOptions = { // https://ai.google.dev/gemini-api/docs/pricing
-	// https://ai.google.dev/gemini-api/docs/thinking#set-budget
-	'gemini-2.5-pro-preview-05-06': {
-		contextWindow: 1_048_576,
-		reservedOutputTokenSpace: 8_192,
-		cost: { input: 0, output: 0 },
-		downloadable: false,
-		supportsFIM: false,
-		supportsSystemMessage: 'separated',
-		specialToolFormat: 'gemini-style',
-		reasoningCapabilities: {
-			supportsReasoning: true,
-			canTurnOffReasoning: true,
-			canIOReasoning: false,
-			reasoningSlider: { type: 'budget_slider', min: 1024, max: 8192, default: 1024 }, // max is really 24576
-			reasoningReservedOutputTokenSpace: 8192,
-		},
-	},
-	'gemini-2.0-flash-lite': {
-		contextWindow: 1_048_576,
-		reservedOutputTokenSpace: 8_192,
-		cost: { input: 0, output: 0 },
-		downloadable: false,
-		supportsFIM: false,
-		supportsSystemMessage: 'separated',
-		specialToolFormat: 'gemini-style',
-		reasoningCapabilities: false, // no reasoning
-	},
-	'gemini-2.5-flash-preview-04-17': {
-		contextWindow: 1_048_576,
-		reservedOutputTokenSpace: 8_192,
-		cost: { input: 0.15, output: .60 }, // TODO $3.50 output with thinking not included
-		downloadable: false,
-		supportsFIM: false,
-		supportsSystemMessage: 'separated',
-		specialToolFormat: 'gemini-style',
-		reasoningCapabilities: {
-			supportsReasoning: true,
-			canTurnOffReasoning: true,
-			canIOReasoning: false,
-			reasoningSlider: { type: 'budget_slider', min: 1024, max: 8192, default: 1024 }, // max is really 24576
-			reasoningReservedOutputTokenSpace: 8192,
-		},
-	},
-	'gemini-2.5-pro-exp-03-25': {
-		contextWindow: 1_048_576,
-		reservedOutputTokenSpace: 8_192,
-		cost: { input: 0, output: 0 },
-		downloadable: false,
-		supportsFIM: false,
-		supportsSystemMessage: 'separated',
-		specialToolFormat: 'gemini-style',
-		reasoningCapabilities: {
-			supportsReasoning: true,
-			canTurnOffReasoning: true,
-			canIOReasoning: false,
-			reasoningSlider: { type: 'budget_slider', min: 1024, max: 8192, default: 1024 }, // max is really 24576
-			reasoningReservedOutputTokenSpace: 8192,
-		},
-	},
-	'gemini-2.0-flash': {
-		contextWindow: 1_048_576,
-		reservedOutputTokenSpace: 8_192, // 8_192,
-		cost: { input: 0.10, output: 0.40 },
-		downloadable: false,
-		supportsFIM: false,
-		supportsSystemMessage: 'separated',
-		specialToolFormat: 'gemini-style',
-		reasoningCapabilities: false,
-	},
-	'gemini-2.0-flash-lite-preview-02-05': {
-		contextWindow: 1_048_576,
-		reservedOutputTokenSpace: 8_192, // 8_192,
-		cost: { input: 0.075, output: 0.30 },
-		downloadable: false,
-		supportsFIM: false,
-		supportsSystemMessage: 'separated',
-		specialToolFormat: 'gemini-style',
-		reasoningCapabilities: false,
-	},
-	'gemini-1.5-flash': {
-		contextWindow: 1_048_576,
-		reservedOutputTokenSpace: 8_192, // 8_192,
-		cost: { input: 0.075, output: 0.30 },  // TODO!!! price doubles after 128K tokens, we are NOT encoding that info right now
-		downloadable: false,
-		supportsFIM: false,
-		supportsSystemMessage: 'separated',
-		specialToolFormat: 'gemini-style',
-		reasoningCapabilities: false,
-	},
-	'gemini-1.5-pro': {
-		contextWindow: 2_097_152,
-		reservedOutputTokenSpace: 8_192,
-		cost: { input: 1.25, output: 5.00 },  // TODO!!! price doubles after 128K tokens, we are NOT encoding that info right now
-		downloadable: false,
-		supportsFIM: false,
-		supportsSystemMessage: 'separated',
-		specialToolFormat: 'gemini-style',
-		reasoningCapabilities: false,
-	},
-	'gemini-1.5-flash-8b': {
-		contextWindow: 1_048_576,
-		reservedOutputTokenSpace: 8_192,
-		cost: { input: 0.0375, output: 0.15 },  // TODO!!! price doubles after 128K tokens, we are NOT encoding that info right now
-		downloadable: false,
-		supportsFIM: false,
-		supportsSystemMessage: 'separated',
-		specialToolFormat: 'gemini-style',
-		reasoningCapabilities: false,
-	},
-} as const satisfies { [s: string]: VoidStaticModelInfo }
+ // ---------------- GEMINI ----------------
+ // Canonical Gemini model capabilities now live in Crux's catalog
+ // (`crux/crux_providers/catalog/providers/gemini.yaml`). This table is kept
+ // empty so that capabilities come from Crux via the overlay. Gemini-specific
+ // truncation and reasoning behavior is handled via provider-level adapters
+ // (e.g. ThinkingConfig) in the send path.
+ const geminiModelOptions: { [s: string]: VoidStaticModelInfo } = {};
 
-const geminiSettings: VoidStaticProviderInfo = {
-	modelOptions: geminiModelOptions,
-	modelOptionsFallback: (modelName) => { return null },
-}
+ const geminiSettings: VoidStaticProviderInfo = {
+ 	modelOptions: geminiModelOptions,
+ 	// No provider-specific fallback here: Crux `/api/models` supplies real
+ 	// capabilities for Gemini models. In the absence of Crux data, generic
+ 	// defaults (`defaultModelOptions`) will be used.
+ 	modelOptionsFallback: (modelName) => { return null },
+ }
 
 
 
@@ -1042,44 +692,13 @@ const mistralSettings: VoidStaticProviderInfo = {
 
 
 // ---------------- GROQ ----------------
-const groqModelOptions = { // https://console.groq.com/docs/models, https://groq.com/pricing/
-	'llama-3.3-70b-versatile': {
-		contextWindow: 128_000,
-		reservedOutputTokenSpace: 32_768, // 32_768,
-		cost: { input: 0.59, output: 0.79 },
-		downloadable: false,
-		supportsFIM: false,
-		supportsSystemMessage: 'system-role',
-		reasoningCapabilities: false,
-	},
-	'llama-3.1-8b-instant': {
-		contextWindow: 128_000,
-		reservedOutputTokenSpace: 8_192,
-		cost: { input: 0.05, output: 0.08 },
-		downloadable: false,
-		supportsFIM: false,
-		supportsSystemMessage: 'system-role',
-		reasoningCapabilities: false,
-	},
-	'qwen-2.5-coder-32b': {
-		contextWindow: 128_000,
-		reservedOutputTokenSpace: null, // not specified?
-		cost: { input: 0.79, output: 0.79 },
-		downloadable: false,
-		supportsFIM: false, // unfortunately looks like no FIM support on groq
-		supportsSystemMessage: 'system-role',
-		reasoningCapabilities: false,
-	},
-	'qwen-qwq-32b': { // https://huggingface.co/Qwen/QwQ-32B
-		contextWindow: 128_000,
-		reservedOutputTokenSpace: null, // not specified?
-		cost: { input: 0.29, output: 0.39 },
-		downloadable: false,
-		supportsFIM: false,
-		supportsSystemMessage: 'system-role',
-		reasoningCapabilities: { supportsReasoning: true, canIOReasoning: true, canTurnOffReasoning: false, openSourceThinkTags: ['<think>', '</think>'] }, // we're using reasoning_format:parsed so really don't need to know openSourceThinkTags
-	},
-} as const satisfies { [s: string]: VoidStaticModelInfo }
+//
+// Canonical Groq model capabilities now live in Crux's catalog
+// (`crux/crux_providers/catalog/providers/groq.yaml`). This table is kept
+// empty so that capabilities come from Crux via the overlay. Groq-specific
+// reasoning I/O behavior remains encoded in `groqSettings`.
+const groqModelOptions: { [s: string]: VoidStaticModelInfo } = {};
+
 const groqSettings: VoidStaticProviderInfo = {
 	modelOptions: groqModelOptions,
 	modelOptionsFallback: (modelName) => { return null },
@@ -1135,83 +754,14 @@ const awsBedrockSettings: VoidStaticProviderInfo = {
 
 
 // ---------------- VLLM, OLLAMA, OPENAICOMPAT (self-hosted / local) ----------------
-const ollamaModelOptions = {
-	'qwen2.5-coder:7b': {
-		contextWindow: 32_000,
-		reservedOutputTokenSpace: null,
-		cost: { input: 0, output: 0 },
-		downloadable: { sizeGb: 1.9 },
-		supportsFIM: true,
-		supportsSystemMessage: 'system-role',
-		reasoningCapabilities: false,
-	},
-	'qwen2.5-coder:3b': {
-		contextWindow: 32_000,
-		reservedOutputTokenSpace: null,
-		cost: { input: 0, output: 0 },
-		downloadable: { sizeGb: 1.9 },
-		supportsFIM: true,
-		supportsSystemMessage: 'system-role',
-		reasoningCapabilities: false,
-	},
-	'qwen2.5-coder:1.5b': {
-		contextWindow: 32_000,
-		reservedOutputTokenSpace: null,
-		cost: { input: 0, output: 0 },
-		downloadable: { sizeGb: .986 },
-		supportsFIM: true,
-		supportsSystemMessage: 'system-role',
-		reasoningCapabilities: false,
-	},
-	'llama3.1': {
-		contextWindow: 128_000,
-		reservedOutputTokenSpace: null,
-		cost: { input: 0, output: 0 },
-		downloadable: { sizeGb: 4.9 },
-		supportsFIM: false,
-		supportsSystemMessage: 'system-role',
-		reasoningCapabilities: false,
-	},
-	'qwen2.5-coder': {
-		contextWindow: 128_000,
-		reservedOutputTokenSpace: null,
-		cost: { input: 0, output: 0 },
-		downloadable: { sizeGb: 4.7 },
-		supportsFIM: false,
-		supportsSystemMessage: 'system-role',
-		reasoningCapabilities: false,
-	},
-	'qwq': {
-		contextWindow: 128_000,
-		reservedOutputTokenSpace: 32_000,
-		cost: { input: 0, output: 0 },
-		downloadable: { sizeGb: 20 },
-		supportsFIM: false,
-		supportsSystemMessage: 'system-role',
-		reasoningCapabilities: { supportsReasoning: true, canIOReasoning: false, canTurnOffReasoning: false, openSourceThinkTags: ['<think>', '</think>'] },
-	},
-	'deepseek-r1': {
-		contextWindow: 128_000,
-		reservedOutputTokenSpace: null,
-		cost: { input: 0, output: 0 },
-		downloadable: { sizeGb: 4.7 },
-		supportsFIM: false,
-		supportsSystemMessage: 'system-role',
-		reasoningCapabilities: { supportsReasoning: true, canIOReasoning: false, canTurnOffReasoning: false, openSourceThinkTags: ['<think>', '</think>'] },
-	},
-	'devstral:latest': {
-		contextWindow: 131_000,
-		reservedOutputTokenSpace: 8_192,
-		cost: { input: 0, output: 0 },
-		downloadable: { sizeGb: 14 },
-		supportsFIM: false,
-		supportsSystemMessage: 'system-role',
-		reasoningCapabilities: false,
-	},
+// Canonical Ollama model capabilities now live in Crux's catalog
+// (`crux/crux_providers/catalog/providers/ollama.yaml`). This table is kept
+// empty so that capabilities come from Crux via the overlay. The
+// `ollamaRecommendedModels` list is retained as an IDE-local hint for which
+// models to install first when setting up a local environment.
+const ollamaModelOptions: { [s: string]: VoidStaticModelInfo } = {};
 
-} as const satisfies Record<string, VoidStaticModelInfo>
-
-export const ollamaRecommendedModels = ['qwen2.5-coder:1.5b', 'llama3.1', 'qwq', 'deepseek-r1', 'devstral:latest'] as const satisfies (keyof typeof ollamaModelOptions)[]
+export const ollamaRecommendedModels = ['qwen2.5-coder:1.5b', 'llama3.1', 'qwq', 'deepseek-r1', 'devstral:latest'] as const satisfies string[]
 
 
 const vLLMSettings: VoidStaticProviderInfo = {
@@ -1449,7 +999,7 @@ const openRouterSettings: VoidStaticProviderInfo = {
 
 
 
-// ---------------- model settings of everything above ----------------
+ // ---------------- model settings of everything above ----------------
 
 const modelSettingsOfProvider: { [providerName in ProviderName]: VoidStaticProviderInfo } = {
 	openAI: openAISettings,
@@ -1474,44 +1024,92 @@ const modelSettingsOfProvider: { [providerName in ProviderName]: VoidStaticProvi
 	googleVertex: googleVertexSettings,
 	microsoftAzure: microsoftAzureSettings,
 	awsBedrock: awsBedrockSettings,
-} as const
+} as const;
+
+
+
+ // ---------------- Crux-backed model capability overlay ----------------
+ // Implementation moved to [`cruxOverlay.ts`](void_genesis_ide/src/vs/workbench/contrib/void/common/modelCapabilities/cruxOverlay.ts:1).
+
 
 
 // ---------------- exports ----------------
 
-// returns the capabilities and the adjusted modelName if it was a fallback
+/**
+ * Returns model capabilities and the adjusted model name for a given
+ * `(providerName, modelName)` selection.
+ *
+ * Today, the per-provider tables in this module plus `defaultModelOptions`
+ * are the primary description of behavior inside the IDE. The embedded Crux
+ * provider layer is being populated from the same information, and, when
+ * available, its `/api/models` responses are applied as an overlay so that
+ * Crux and the IDE stay in sync during the migration to a single catalog.
+ *
+ * Resolution order (conceptual):
+ *
+ *   1. Use the per-provider static tables in this module (including each
+ *      provider's `modelOptionsFallback`) to obtain a base record when
+ *      possible.
+ *   2. Apply a Crux capability overlay for the resolved model name, if
+ *      present in the in-memory overlay cache.
+ *   3. For OpenAI, fall back to a generic GPT/o*-style chat configuration
+ *      when the model id looks like a future chat model that is not yet in
+ *      the static tables.
+ *   4. For completely unknown models, fall back to `defaultModelOptions`.
+ *
+ * In all cases, user overrides from `overridesOfModel` are merged last so
+ * that explicit configuration wins over both static tables and Crux metadata.
+ */
 export const getModelCapabilities = (
 	providerName: ProviderName,
 	modelName: string,
-	overridesOfModel: OverridesOfModel | undefined
+	overridesOfModel: OverridesOfModel | undefined,
 ): VoidStaticModelInfo & (
 	| { modelName: string; recognizedModelName: string; isUnrecognizedModel: false }
 	| { modelName: string; recognizedModelName?: undefined; isUnrecognizedModel: true }
 ) => {
 
-	const lowercaseModelName = modelName.toLowerCase()
+	const lowercaseModelName = modelName.toLowerCase();
+	const { modelOptions, modelOptionsFallback } = modelSettingsOfProvider[providerName];
 
-	const { modelOptions, modelOptionsFallback } = modelSettingsOfProvider[providerName]
-
-	// Get any override settings for this model
+	// User overrides are always applied last.
 	const overrides = overridesOfModel?.[providerName]?.[modelName];
 
-	// search model options object directly first
+	// ---- 1) Static tables: exact match ----
 	for (const modelName_ in modelOptions) {
-		const lowercaseModelName_ = modelName_.toLowerCase()
+		const lowercaseModelName_ = modelName_.toLowerCase();
 		if (lowercaseModelName === lowercaseModelName_) {
-			return { ...modelOptions[modelName], ...overrides, modelName, recognizedModelName: modelName, isUnrecognizedModel: false };
+			const base = {
+				// Use the canonical table entry for the matched key, not the
+				// user-supplied modelName (which may differ in case or alias).
+				...modelOptions[modelName_],
+				modelName,
+				recognizedModelName: modelName_,
+				isUnrecognizedModel: false as const,
+			};
+			const resolvedName = base.recognizedModelName ?? base.modelName;
+			const overlay = getCruxOverlayForModel(providerName, resolvedName) ?? {};
+			const merged = { ...base, ...overlay, ...overrides };
+			return merged;
 		}
 	}
 
-	const result = modelOptionsFallback(modelName)
-	if (result) {
-		return { ...result, ...overrides, modelName: result.modelName, isUnrecognizedModel: false };
+	// ---- 2) Static tables: provider-specific fallback ----
+	const fallback = modelOptionsFallback(modelName);
+	if (fallback) {
+		const base = {
+			...fallback,
+			modelName: fallback.modelName,
+			recognizedModelName: fallback.recognizedModelName ?? fallback.modelName,
+			isUnrecognizedModel: false as const,
+		};
+		const resolvedName = base.recognizedModelName ?? base.modelName;
+		const overlay = getCruxOverlayForModel(providerName, resolvedName) ?? {};
+		const merged = { ...base, ...overlay, ...overrides };
+		return merged;
 	}
 
-	// Generic fallback for unknown OpenAI chat models (e.g. future GPT-* or ChatGPT IDs).
-	// This prevents new OpenAI models (like gpt-5.1-*) from being treated as tiny-context,
-	// text-only models with no system messages or native tools.
+	// ---- 3) Generic OpenAI chat fallback for future GPT/o* ids ----
 	if (providerName === 'openAI') {
 		const genericLower = lowercaseModelName;
 		if (genericLower.startsWith('gpt-') || genericLower.startsWith('o') || genericLower.includes('chatgpt')) {
@@ -1525,11 +1123,45 @@ export const getModelCapabilities = (
 				supportsFIM: false,
 				reasoningCapabilities: false,
 			};
-			return { ...generic, ...overrides, modelName, recognizedModelName: modelName, isUnrecognizedModel: false };
+			const base = {
+				...generic,
+				modelName,
+				recognizedModelName: modelName,
+				isUnrecognizedModel: false as const,
+			};
+			const resolvedName = base.recognizedModelName ?? base.modelName;
+			const overlay = getCruxOverlayForModel(providerName, resolvedName) ?? {};
+			const merged = { ...base, ...overlay, ...overrides };
+			return merged;
 		}
 	}
 
-	return { modelName, ...defaultModelOptions, ...overrides, isUnrecognizedModel: true };
+	// ---- 4) Completely unknown model: default options only ----
+	const resolvedName = modelName;
+	const overlay = getCruxOverlayForModel(providerName, resolvedName) ?? {};
+	const hasOverlay = Object.keys(overlay).length > 0;
+
+	if (hasOverlay) {
+		// Crux knows about this model even though the local tables do not.
+		// Treat it as recognized and let Crux capabilities drive behavior,
+		// using `defaultModelOptions` only as a structural fallback.
+		const base = {
+			...defaultModelOptions,
+			modelName,
+			recognizedModelName: resolvedName,
+			isUnrecognizedModel: false as const,
+		};
+		const merged = { ...base, ...overlay, ...overrides };
+		return merged;
+	}
+
+	const base = {
+		...defaultModelOptions,
+		modelName,
+		isUnrecognizedModel: true as const,
+	};
+	const merged = { ...base, ...overrides };
+	return merged;
 }
 
 // non-model settings
@@ -1539,18 +1171,8 @@ export const getProviderCapabilities = (providerName: ProviderName) => {
 }
 
 
-export type SendableReasoningInfo = {
-	type: 'budget_slider_value',
-	isReasoningEnabled: true,
-	reasoningBudget: number,
-} | {
-	type: 'effort_slider_value',
-	isReasoningEnabled: true,
-	reasoningEffort: string,
-} | null
-
-
-
+ // `SendableReasoningInfo` is now exported from
+ // [`types.ts`](void_genesis_ide/src/vs/workbench/contrib/void/common/modelCapabilities/types.ts:1).
 export const getIsReasoningEnabledState = (
 	featureName: FeatureName,
 	providerName: ProviderName,

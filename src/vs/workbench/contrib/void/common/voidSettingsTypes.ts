@@ -1,12 +1,9 @@
-
-/*--------------------------------------------------------------------------------------
- *  Copyright 2025 Glass Devtools, Inc. All rights reserved.
- *  Licensed under the Apache License, Version 2.0. See LICENSE.txt for more information.
- *--------------------------------------------------------------------------------------*/
-
+// TODO This file needs to be reduced to <500 LOC (extract code into a subfolder with separate files)
 import { defaultModelsOfProvider, defaultProviderSettings, ModelOverrides } from './modelCapabilities.js';
 import { ToolApprovalType } from './toolsServiceTypes.js';
-import { VoidSettingsState } from './voidSettingsService.js'
+import type { VoidSettingsStateShape } from './voidSettings/voidSettingsHelpers.js';
+
+export type VoidSettingsState = VoidSettingsStateShape;
 
 
 type UnionOfKeys<T> = T extends T ? keyof T : never;

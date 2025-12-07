@@ -130,6 +130,7 @@ import ErrorTelemetry from '../../platform/telemetry/electron-main/errorTelemetr
  import { MetricsMainService } from '../../workbench/contrib/void/electron-main/metricsMainService.js';
  import { VoidMainUpdateService } from '../../workbench/contrib/void/electron-main/voidUpdateMainService.js';
  import { LLMMessageChannel } from '../../workbench/contrib/void/electron-main/sendLLMMessageChannel.js';
+ import { KeySyncChannel } from '../../workbench/contrib/void/electron-main/llmMessage/keySyncChannel.js';
  import { VoidSCMService } from '../../workbench/contrib/void/electron-main/voidSCMMainService.js';
  import { IVoidSCMService } from '../../workbench/contrib/void/common/voidSCMTypes.js';
  import { MCPChannel } from '../../workbench/contrib/void/electron-main/mcpChannel.js';
@@ -1258,6 +1259,9 @@ export class CodeApplication extends Disposable {
 
 		const sendLLMMessageChannel = new LLMMessageChannel(accessor.get(IMetricsService));
 		mainProcessElectronServer.registerChannel('void-channel-llmMessage', sendLLMMessageChannel);
+
+		const keySyncChannel = new KeySyncChannel();
+		mainProcessElectronServer.registerChannel('void-channel-keys', keySyncChannel);
 
 		// Void added this
 		const voidSCMChannel = ProxyChannel.fromService(accessor.get(IVoidSCMService), disposables);

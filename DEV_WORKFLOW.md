@@ -389,6 +389,84 @@ You can also experiment with web/server entrypoints:
 
 These variants are **not yet the primary focus** for Void Agent development but may be useful once desktop flows are stable.
 
+### 5.3 Built-in extensions download and `VOID_SKIP_BUILTIN_EXTENSIONS_DOWNLOAD`
+
+The `download-builtin-extensions` step is implemented by:
+
+- [`void_genesis_ide/build/lib/builtInExtensions.ts`](void_genesis_ide/build/lib/builtInExtensions.ts:1)
+- [`void_genesis_ide/build/lib/builtInExtensions.js`](void_genesis_ide/build/lib/builtInExtensions.js:1)
+
+and wired from:
+
+- [`"download-builtin-extensions": "node build/lib/builtInExtensions.js"`](void_genesis_ide/package.json:45)
+
+When `npm run download-builtin-extensions` runs (for example from [`scripts/code-web.bat`](void_genesis_ide/scripts/code-web.bat:1)), it:
+
+- Logs **“Synchronizing built-in extensions…”**.
+- Reads the built-in extension lists from [`product.json`](void_genesis_ide/product.json:1).
+- Downloads/updates extensions from:
+  - Local VSIX paths, or
+  - The configured marketplace (`extensionsGallery.serviceUrl`), or
+  - GitHub fallbacks.
+
+On some networks this step can hang or be very slow (e.g., blocked marketplace, firewall, or unreliable connectivity). To support **offline / constrained dev** without breaking production builds, the helper supports an explicit, opt-in escape hatch:
+
+- Environment variable: `VOID_SKIP_BUILTIN_EXTENSIONS_DOWNLOAD`
+
+Behavior:
+
+- If **unset** (default) or set to anything other than `'1'` / `'true'`:
+  - `npm run download-builtin-extensions` behaves as upstream:
+    - Performs the full synchronization and download.
+- If set to `'1'` or `'true'` in the environment of the Node process:
+  - [`getBuiltInExtensions()`](void_genesis_ide/build/lib/builtInExtensions.ts:161) logs:
+
+    > Skipping built-in extensions synchronization (VOID_SKIP_BUILTIN_EXTENSIONS_DOWNLOAD set).
+
+  - Returns immediately without:
+    - Reading/writing the control file under `~/.vscode-oss-dev/extensions/control.json`.
+    - Downloading anything from marketplace or GitHub.
+    - Modifying `.build/builtInExtensions/`.
+
+#### 5.3.1 How to use the flag in dev
+
+From a **new terminal** (so you know which shells have the flag set):
+
+- **PowerShell:**
+
+  ```powershell
+  $env:VOID_SKIP_BUILTIN_EXTENSIONS_DOWNLOAD = "1"
+
+  cd c:\git\Void-Genesis\Void-Genesis\void_genesis_ide
+  # Example: web dev entrypoint that triggers download-builtin-extensions
+  scripts\code-web.bat
+  ```
+
+- **cmd.exe:**
+
+  ```bat
+  set VOID_SKIP_BUILTIN_EXTENSIONS_DOWNLOAD=1
+
+  cd c:\git\Void-Genesis\Void-Genesis\void_genesis_ide
+  rem Example: call the helper directly
+  npm run download-builtin-extensions
+  ```
+
+Use this flag when:
+
+- You are doing **local Void Agent / GPT‑5.1 development** and:
+  - You do not require the very latest built-in extension set, or
+  - Marketplace/GitHub access is unreliable or blocked.
+- You want to avoid hangs at “Synchronizing built-in extensions…” during **dev** workflows.
+
+Do **not** enable this flag for:
+
+- Release / CI / official builder runs where you expect the full built-in extension set to be synchronized.
+
+In other words:
+
+- Treat `VOID_SKIP_BUILTIN_EXTENSIONS_DOWNLOAD` as a **dev-only performance and reliability knob**, not a permanent configuration for production builds.
+
 ---
 
 ## 6. How Changes Flow From `void_genesis_ide` Into the Built IDE
@@ -515,7 +593,7 @@ Several improvements are anticipated (tracked in your TODO/decision logs):
 
 - **Source-of-truth discipline:** Never treat [`void-builder/vscode/`](void-builder/vscode:1) as canonical; all permanent edits live in [`void_genesis_ide/`](void_genesis_ide:1).
 
-This document is the baseline for subsequent work on GPT‑5.1 capabilities, tool integration, and agent behavior inside Void Genesis IDE. Any substantial change to the workflows described here should be reflected both in this file and in the `handoff` documentation (especially [`handoff/04_decision_log.md`](handoff/04_decision_log.md:1) and [`handoff/07_environment_spec.md`](handoff/07_environment_spec.md:1)).
+This document is the baseline for subsequent work on GPT‑5.1 capabilities, tool integration, and agent behavior inside Void Genesis IDE. Any substantial change to the workflows described here should be reflected both in this file, in the `handoff` documentation (especially [`handoff/04_decision_log.md`](handoff/04_decision_log.md:1) and [`handoff/07_environment_spec.md`](handoff/07_environment_spec.md:1)), and in [`CRUX_INTEGRATION.md`](docs/crux_integration/CRUX_INTEGRATION.md:1) when it affects Crux × IDE integration.
 
 ---
 
