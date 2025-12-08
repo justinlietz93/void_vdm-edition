@@ -537,16 +537,12 @@ export class CodeApplication extends Disposable {
 		this.logService.debug(`from: ${this.environmentMainService.appRoot}`);
 		this.logService.debug('args:', this.environmentMainService.args);
 
-		// Ensure Crux provider service is running (managed by IDE unless overridden by env)
-		try {
-			if (!this.cruxSupervisor) {
-				this.cruxSupervisor = new CruxSupervisor(this.environmentMainService, this.logService, this.lifecycleMainService);
-			}
-
-			await this.cruxSupervisor.startIfNeeded();
-		} catch (error) {
-			this.logService.error('[CruxSupervisor] Failed to ensure Crux is running', error);
-		}
+		// Kick off Crux provider service startup in the background.
+		// Crux is the LLM kernel for the IDE, but we do not want slow or failing
+		// Crux startup to block the initial window from opening. Any LLM usage
+		// before Crux is healthy will surface explicit errors via the Crux HTTP
+		// client layer instead of hanging the workbench.
+		this.startCruxInBackground();
 
 		// Make sure we associate the program with the app user model id
 		// This will help Windows to associate the running program with
@@ -641,6 +637,21 @@ export class CodeApplication extends Disposable {
 			}, 2500));
 		}, 2500));
 		eventuallyPhaseScheduler.schedule();
+	}
+
+	private startCruxInBackground(): void {
+		try {
+			if (!this.cruxSupervisor) {
+				this.cruxSupervisor = new CruxSupervisor(this.environmentMainService, this.logService, this.lifecycleMainService);
+			}
+
+			// Fire and forget: do not block initial window creation on Crux startup.
+			void this.cruxSupervisor.startIfNeeded().catch(error => {
+				this.logService.error('[CruxSupervisor] Failed to ensure Crux is running', error);
+			});
+		} catch (error) {
+			this.logService.error('[CruxSupervisor] Failed to schedule Crux startup', error);
+		}
 	}
 
 	private async setupProtocolUrlHandlers(accessor: ServicesAccessor, mainProcessElectronServer: ElectronIPCServer): Promise<IInitialProtocolUrls | undefined> {

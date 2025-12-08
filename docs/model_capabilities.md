@@ -40,7 +40,7 @@ These are mainly used for UI defaults and are not replicated here.
 
 Every model capability entry conforms to `VoidStaticModelInfo`:
 
-- Definition: [`VoidStaticModelInfo`](void_genesis_ide/src/vs/workbench/contrib/void/common/modelCapabilities.ts:162)
+- Definition: [`VoidStaticModelInfo`](void_genesis_ide/src/vs/workbench/contrib/void/common/modelCapabilities/types.ts:1)
 - Key fields:
 
   - `contextWindow: number`  
@@ -80,9 +80,9 @@ Every model capability entry conforms to `VoidStaticModelInfo`:
 
 ### 1.3 `defaultModelOptions` for truly unknown models
 
-When a model cannot be resolved by name or via heuristics, Void uses:
+When a model cannot be resolved from Crux’s catalog overlay (for example, a provider/model pair that `/api/models` does not know about), Void uses:
 
-- [`defaultModelOptions`](void_genesis_ide/src/vs/workbench/contrib/void/common/modelCapabilities.ts:244)
+- [`defaultModelOptions`](void_genesis_ide/src/vs/workbench/contrib/void/common/modelCapabilities/types.ts:1)
 
 Configured as:
 
@@ -98,33 +98,23 @@ This is a **safe fallback** that prevents the previous pathological behavior whe
 
 Now, even unknown models get a reasonably large context and some reserved output, so they can still function without immediately truncating nearly all input.
 
-### 1.4 Generic OpenAI Chat Fallback (GPT‑5.1 and future GPTs)
+### 1.4 Generic OpenAI Chat Behavior (GPT‑5.1 and future GPTs)
 
-For the `openAI` provider, `getModelCapabilities()` includes a **generic chat fallback**:
+As of the Crux-first migration, [`getModelCapabilities()`](void_genesis_ide/src/vs/workbench/contrib/void/common/modelCapabilities.ts:1) no longer implements any TypeScript-side “generic GPT chat” heuristics. Instead:
 
-- Logic: [`getModelCapabilities`](void_genesis_ide/src/vs/workbench/contrib/void/common/modelCapabilities.ts:1482)
+- GPT‑5.1 and other OpenAI chat models must be explicitly represented in Crux’s OpenAI catalog:
+  - [`openai.yaml`](crux/crux_providers/catalog/providers/openai.yaml:1)
+- The IDE treats a model as **recognized** only when Crux exposes a capability overlay for its `(provider, model)` pair via `/api/models`. In that case:
+  - [`getModelCapabilities()`](void_genesis_ide/src/vs/workbench/contrib/void/common/modelCapabilities.ts:1) starts from [`defaultModelOptions`](void_genesis_ide/src/vs/workbench/contrib/void/common/modelCapabilities/types.ts:1),
+  - Merges in the Crux overlay,
+  - Then applies any user overrides from `overridesOfModel`,
+  - And marks `isUnrecognizedModel: false` with `recognizedModelName = modelName`.
+- If Crux does **not** know about a model, [`getModelCapabilities()`](void_genesis_ide/src/vs/workbench/contrib/void/common/modelCapabilities.ts:1):
+  - Builds a capability object from `defaultModelOptions` plus user overrides,
+  - Marks `isUnrecognizedModel: true`,
+  - Makes no additional assumptions about tools, reasoning mode, or system-message semantics.
 
-If a model name:
-
-- Belongs to provider `openAI`, and
-- Starts with `gpt-`, or
-- Starts with `o`, or
-- Contains `chatgpt`
-
-and is not otherwise recognized, Void creates an inferred capability with:
-
-- `contextWindow = 1_000_000`
-- `reservedOutputTokenSpace = 32_768`
-- `supportsSystemMessage = 'developer-role'`
-- `specialToolFormat = 'openai-style'`
-- `supportsFIM = false`
-- `reasoningCapabilities = false` (by default)
-
-This path is specifically designed to ensure that **GPT‑5.1** and future OpenAI chat models:
-
-- Are treated as **large-context, tool-capable chat models**.
-- Use native OpenAI `tools` rather than falling back to XML-based tool calls.
-- Do not regress to tiny effective input budgets.
+This design ensures that GPT‑5.1 and future OpenAI chat models behave correctly **only when** their capabilities are modeled in Crux, keeping provider/model semantics centralized and avoiding divergent heuristics in the IDE.
 
 ---
 
@@ -184,7 +174,7 @@ Key behavior:
 
 ## 3. Provider Summary
 
-This section summarizes per-provider defaults and special characteristics. For exact numeric details and any future updates, consult the linked sections.
+This section summarizes per-provider defaults and special characteristics **as encoded in Crux’s provider/model catalog**. Canonical values live in the Crux YAML files and SQLite-backed registry; TypeScript’s `*ModelOptions` maps are **not** authoritative and may be empty or partial. [`getModelCapabilities()`](void_genesis_ide/src/vs/workbench/contrib/void/common/modelCapabilities.ts:1) now derives semantics from Crux overlays (via `/api/models`) merged with [`defaultModelOptions`](void_genesis_ide/src/vs/workbench/contrib/void/common/modelCapabilities/types.ts:1) and user overrides.
 
 ### 3.1 OpenAI (`openAI`)
 
@@ -196,7 +186,13 @@ This section summarizes per-provider defaults and special characteristics. For e
   - `o3`
   - `o4-mini`
 
-- Model capability table: [`openAIModelOptions`](void_genesis_ide/src/vs/workbench/contrib/void/common/modelCapabilities.ts:605)
+- Model capability table (structural only, no longer consulted by `getModelCapabilities()`): [`openAIModelOptions`](void_genesis_ide/src/vs/workbench/contrib/void/common/modelCapabilities.ts:605)
+
+  Canonical OpenAI model semantics (including GPT‑5.1) live in the Crux catalog:
+
+  - [`openai.yaml`](crux/crux_providers/catalog/providers/openai.yaml:1)
+
+  and are surfaced to the IDE via `/api/models` and the Crux overlay merge in [`modelCapabilities.ts`](void_genesis_ide/src/vs/workbench/contrib/void/common/modelCapabilities.ts:1).
 
 Key models:
 
@@ -255,7 +251,13 @@ Key models:
   - `claude-3-5-haiku-latest`
   - `claude-3-opus-latest`
 
-- Model table: [`anthropicModelOptions`](void_genesis_ide/src/vs/workbench/contrib/void/common/modelCapabilities.ts:479)
+- Model table (structural only, kept for documentation/tests; `getModelCapabilities()` ignores it): [`anthropicModelOptions`](void_genesis_ide/src/vs/workbench/contrib/void/common/modelCapabilities.ts:479)
+
+Crux as source of truth:
+
+- Canonical Anthropic model metadata (context windows, reasoning budgets, tool formats) is defined in the Crux catalog:
+  - [`anthropic.yaml`](crux/crux_providers/catalog/providers/anthropic.yaml:1)
+- The IDE receives these values via `/api/models` and merges them through the Crux overlay in [`modelCapabilities.ts`](void_genesis_ide/src/vs/workbench/contrib/void/common/modelCapabilities.ts:1).
 
 Common properties:
 
@@ -479,14 +481,12 @@ Crux as source of truth:
 
 ### 3.9 Self-hosted / Local Providers
 
-These use extensive fallback logic via:
-
-- [`extensiveModelOptionsFallback`](void_genesis_ide/src/vs/workbench/contrib/void/common/modelCapabilities.ts:393)
+These **used to** rely on the TypeScript-side `extensiveModelOptionsFallback` heuristics to infer capabilities for many open-source models (Llama, Qwen, Phi, etc.). As of the Crux-first migration, canonical behavior for these models lives in Crux’s catalog, and [`extensiveModelOptionsFallback()`](void_genesis_ide/src/vs/workbench/contrib/void/common/modelCapabilities.ts:157) has been intentionally neutered to return `null` so that unknown models fall back to `defaultModelOptions` plus Crux overlays instead of IDE-maintained heuristics.
 
 #### 3.9.1 vLLM (`vLLM`)
 
-- Settings: [`vLLMSettings`](void_genesis_ide/src/vs/workbench/contrib/void/common/modelCapabilities.ts:1217)
-- Uses `extensiveModelOptionsFallback` for a wide variety of open models (Llama, Qwen, Phi, etc.).
+- Settings: [`vLLMSettings`](void_genesis_ide/src/vs/workbench/contrib/void/common/modelCapabilities.ts:377)
+- Capabilities now come from Crux’s `/api/models` for known models. `vLLMSettings.modelOptionsFallback` still delegates to [`extensiveModelOptionsFallback()`](void_genesis_ide/src/vs/workbench/contrib/void/common/modelCapabilities.ts:157), but since that helper now returns `null`, vLLM effectively falls back to `defaultModelOptions` plus any Crux overlay, with no additional TypeScript-side heuristics.
 - Applies:
 
   - `downloadable: { sizeGb: 'not-known' }`
@@ -503,8 +503,8 @@ These use extensive fallback logic via:
 
 - IDE adapter & recommendations:
 
-  - `ollamaModelOptions` in [`modelCapabilities.ts`](void_genesis_ide/src/vs/workbench/contrib/void/common/modelCapabilities.ts:1138) is now intentionally minimal and primarily relies on `extensiveModelOptionsFallback`.
-  - [`ollamaRecommendedModels`](void_genesis_ide/src/vs/workbench/contrib/void/common/modelCapabilities.ts:1214) is an IDE-local list of suggested model names for the UI:
+  - `ollamaModelOptions` in [`modelCapabilities.ts`](void_genesis_ide/src/vs/workbench/contrib/void/common/modelCapabilities.ts:372) is intentionally minimal and primarily serves as a structural map; per-model semantics come from Crux. When Crux has no entry yet, Ollama models fall back to the generic defaults defined in [`modelCapabilities/types.ts`](void_genesis_ide/src/vs/workbench/contrib/void/common/modelCapabilities/types.ts), with no additional TypeScript-side capability heuristics.
+  - [`ollamaRecommendedModels`](void_genesis_ide/src/vs/workbench/contrib/void/common/modelCapabilities.ts:374) is an IDE-local list of suggested model names for the UI:
 
     - `['qwen2.5-coder:1.5b', 'llama3.1', 'qwq', 'deepseek-r1', 'devstral:latest']`
 
@@ -519,7 +519,7 @@ Provider reasoning:
 
 #### 3.9.3 OpenAI-compatible Proxies (`openAICompatible`, `liteLLM`, `googleVertex`, `microsoftAzure`, `awsBedrock`)
 
-- All use `extensiveModelOptionsFallback` with subtle differences:
+- These providers now primarily consume Crux’s `/api/models` responses for capabilities. Their `modelOptionsFallback` functions still call [`extensiveModelOptionsFallback()`](void_genesis_ide/src/vs/workbench/contrib/void/common/modelCapabilities.ts:157), but since that helper now returns `null`, they effectively fall back to `defaultModelOptions` plus any Crux overlay, rather than IDE-maintained heuristics.
 
   - `openAICompatible`: no extra `downloadable` info; generic OpenAI-compatible reasoning payload.
   - `liteLLM`: like `openAICompatible`, but explicitly expects `reasoning_content` in output.
@@ -597,10 +597,9 @@ When modifying model capabilities:
 5. **Fallback sanity checks**
 
    - Ensure that:
-     - `defaultModelOptions` stays generous and safe.
-     - Generic OpenAI chat fallback remains aligned with current OpenAI product behavior.
-   - Revisit fallback logic in:
-     - [`extensiveModelOptionsFallback`](void_genesis_ide/src/vs/workbench/contrib/void/common/modelCapabilities.ts:393)
-     - When adding new widely used open-source model families.
+     - [`defaultModelOptions`](void_genesis_ide/src/vs/workbench/contrib/void/common/modelCapabilities/types.ts:1) stays generous and safe for truly unknown models.
+   - When adding new widely used model families or OpenAI releases (for example GPT‑5.1 successors), prefer:
+     - Extending the Crux catalog YAMLs and `/api/models` tests, rather than adding new TypeScript heuristics.
+   - `extensiveModelOptionsFallback()` in [`modelCapabilities.ts`](void_genesis_ide/src/vs/workbench/contrib/void/common/modelCapabilities.ts:1) is intentionally a no-op; do **not** reintroduce IDE-side capability brains there.
 
 By keeping this document synchronized with the implementation in [`modelCapabilities.ts`](void_genesis_ide/src/vs/workbench/contrib/void/common/modelCapabilities.ts:1), Void Genesis IDE maintains a clear and auditable model capability surface for both human developers and future automated agents.

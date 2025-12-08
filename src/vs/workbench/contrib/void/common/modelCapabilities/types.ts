@@ -61,6 +61,20 @@ export type VoidStaticModelInfo = {
 	supportsFIM: boolean;
 
 	/**
+	 * Coarse, model-level flag indicating whether tools are enabled for this
+	 * model. When undefined, the IDE falls back to treating tools as enabled
+	 * to preserve pre-Crux behavior.
+	 */
+	toolsSupported?: boolean;
+
+	/**
+	 * Soft upper bound on how many tool invocations the orchestrator should
+	 * attempt in a single logical turn. A null/undefined value means "no
+	 * explicit per-model cap" (subject to orchestrator-wide safety limits).
+	 */
+	maxToolCallsPerTurn?: number | null;
+
+	/**
 	 * Extra payload keys to include for OpenAI-compatible requests
 	 * (ollama, vLLM, openrouter, etc.).
 	 */

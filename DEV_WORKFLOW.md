@@ -341,6 +341,7 @@ scripts\code.bat
   - Ensure Electron is downloaded under `.build\electron`.
   - Compile the workbench and extensions as needed.
   - Manage built-in extensions.
+- On subsequent runs, if `node_modules`, `out\main.js`, and `.build\electron/<nameShort>.exe` already exist, [`scripts/code.bat`](void_genesis_ide/scripts/code.bat:1) will set `VSCODE_SKIP_PRELAUNCH=1` and skip `preLaunch.js`, launching Electron directly for faster dev startup. To force a full prelaunch (for example after changing dependencies or pulling a large upstream update), clear `VSCODE_SKIP_PRELAUNCH` and/or remove those assets so that `preLaunch.js` runs again.
 - Reads the short product name from [`void_genesis_ide/product.json`](void_genesis_ide/product.json:1), constructs:
 
   ```bat
@@ -430,7 +431,9 @@ Behavior:
 
 #### 5.3.1 How to use the flag in dev
 
-From a **new terminal** (so you know which shells have the flag set):
+The desktop dev launcher [`scripts/code.bat`](void_genesis_ide/scripts/code.bat:1) now sets `VOID_SKIP_BUILTIN_EXTENSIONS_DOWNLOAD=1` by default if it is unset, so standard desktop dev runs skip the slow built-in extensions synchronization step. To force a full sync (for example when validating a new built-in extension), explicitly set `VOID_SKIP_BUILTIN_EXTENSIONS_DOWNLOAD=0` or `"false"` in the shell before calling `scripts\code.bat`.
+
+From a **new terminal** (so you know which shells have the flag set) for other entrypoints or one-off manual runs:
 
 - **PowerShell:**
 

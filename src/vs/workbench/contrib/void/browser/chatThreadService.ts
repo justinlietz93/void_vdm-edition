@@ -39,6 +39,7 @@ import { IDirectoryStrService } from '../common/directoryStrService.js';
 import { IFileService } from '../../../../platform/files/common/files.js';
 import { IMCPService } from '../common/mcpService.js';
 import { RawMCPToolCall } from '../common/mcpServiceTypes.js';
+import { getMaxToolCallsPerTurnForModel } from '../common/modelCapabilities.js';
 
 
 // related to retrying when LLM message has error
@@ -755,6 +756,17 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 		let shouldSendAnotherMessage = true
 		let isRunningWhenEnd: IsRunningType = undefined
 
+		// Per-model tool call cap (from Crux capabilities via modelCapabilities.ts).
+		const providerName = modelSelection?.providerName
+		const modelName = modelSelection?.modelName
+		const maxToolCallsPerTurn = providerName && modelName
+			? getMaxToolCallsPerTurnForModel(providerName, modelName, overridesOfModel)
+			: undefined
+
+		// Tool usage counters for this agent run (non-content telemetry only).
+		let toolCallsRequested = 0
+		let toolCallsExecuted = 0
+
 		// before enter loop, call tool
 		if (callThisToolFirst) {
 			const { interrupted } = await this._runToolCall(threadId, callThisToolFirst.name, callThisToolFirst.id, callThisToolFirst.mcpServerName, { preapproved: true, unvalidatedToolParams: callThisToolFirst.rawParams, validatedParams: callThisToolFirst.params })
@@ -777,7 +789,7 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 			this._setStreamState(threadId, { isRunning: 'idle', interrupt: idleInterruptor })
 
 			const chatMessages = this.state.allThreads[threadId]?.messages ?? []
-			const { messages, separateSystemMessage } = await this._convertToLLMMessagesService.prepareLLMChatMessages({
+			const { messages, separateSystemMessage, budgetingInfo } = await this._convertToLLMMessagesService.prepareLLMChatMessages({
 				chatMessages,
 				modelSelection,
 				chatMode
@@ -809,7 +821,7 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 					modelSelection,
 					modelSelectionOptions,
 					overridesOfModel,
-					logging: { loggingName: `Chat - ${chatMode}`, loggingExtras: { threadId, nMessagesSent, chatMode } },
+					logging: { loggingName: `Chat - ${chatMode}`, loggingExtras: { threadId, nMessagesSent, chatMode, budgetingInfo } },
 					separateSystemMessage: separateSystemMessage,
 					onText: ({ fullText, fullReasoning, toolCall }) => {
 						this._setStreamState(threadId, { isRunning: 'LLM', llmInfo: { displayContentSoFar: fullText, reasoningSoFar: fullReasoning, toolCallSoFar: toolCall ?? null }, interrupt: Promise.resolve(() => { if (llmCancelToken) this._llmMessageService.abort(llmCancelToken) }) })
@@ -823,7 +835,7 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 					onAbort: () => {
 						// stop the loop to free up the promise, but don't modify state (already handled by whatever stopped it)
 						resMessageIsDonePromise({ type: 'llmAborted' })
-						this._metricsService.capture('Agent Loop Done (Aborted)', { nMessagesSent, chatMode })
+						this._metricsService.capture('Agent Loop Done (Aborted)', { nMessagesSent, chatMode, toolCallsRequested, toolCallsExecuted, maxToolCallsPerTurn })
 					},
 				})
 
@@ -874,28 +886,43 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 					}
 				}
 
-				// llm res success
-				const { toolCall, info } = llmRes
+			// llm res success
+			const { toolCall, info } = llmRes
 
-				this._addMessageToThread(threadId, { role: 'assistant', displayContent: info.fullText, reasoning: info.fullReasoning, anthropicReasoning: info.anthropicReasoning })
+			this._addMessageToThread(threadId, { role: 'assistant', displayContent: info.fullText, reasoning: info.fullReasoning, anthropicReasoning: info.anthropicReasoning })
 
-				this._setStreamState(threadId, { isRunning: 'idle', interrupt: 'not_needed' }) // just decorative for clarity
+			this._setStreamState(threadId, { isRunning: 'idle', interrupt: 'not_needed' }) // just decorative for clarity
 
-				// call tool if there is one
-				if (toolCall) {
-					const mcpTools = this._mcpService.getMCPTools()
-					const mcpTool = mcpTools?.find(t => t.name === toolCall.name)
+			// call tool if there is one
+			if (toolCall) {
+				toolCallsRequested += 1
 
-					const { awaitingUserApproval, interrupted } = await this._runToolCall(threadId, toolCall.name, toolCall.id, mcpTool?.mcpServerName, { preapproved: false, unvalidatedToolParams: toolCall.rawParams })
-					if (interrupted) {
-						this._setStreamState(threadId, undefined)
-						return
-					}
-					if (awaitingUserApproval) { isRunningWhenEnd = 'awaiting_user' }
-					else { shouldSendAnotherMessage = true }
-
-					this._setStreamState(threadId, { isRunning: 'idle', interrupt: 'not_needed' }) // just decorative, for clarity
+				// Enforce per-model tool call cap when provided by Crux capabilities.
+				if (typeof maxToolCallsPerTurn === 'number' && maxToolCallsPerTurn > 0 && toolCallsExecuted >= maxToolCallsPerTurn) {
+					const msg = 'Tool call skipped: reached per-turn tool-call limit for this model.'
+					this._addMessageToThread(threadId, { role: 'assistant', displayContent: msg, reasoning: '', anthropicReasoning: null })
+					this._setStreamState(threadId, { isRunning: 'idle', interrupt: 'not_needed' })
+					// Do not schedule another LLM message; exit the retry loop and finish this agent run.
+					break
 				}
+
+				const mcpTools = this._mcpService.getMCPTools()
+				const mcpTool = mcpTools?.find(t => t.name === toolCall.name)
+
+				const { awaitingUserApproval, interrupted } = await this._runToolCall(threadId, toolCall.name, toolCall.id, mcpTool?.mcpServerName, { preapproved: false, unvalidatedToolParams: toolCall.rawParams })
+				if (interrupted) {
+					this._setStreamState(threadId, undefined)
+					return
+				}
+				if (awaitingUserApproval) {
+					isRunningWhenEnd = 'awaiting_user'
+				} else {
+					shouldSendAnotherMessage = true
+					toolCallsExecuted += 1
+				}
+
+				this._setStreamState(threadId, { isRunning: 'idle', interrupt: 'not_needed' }) // just decorative, for clarity
+			}
 
 			} // end while (attempts)
 		} // end while (send message)
@@ -906,8 +933,8 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 		// add checkpoint before the next user message
 		if (!isRunningWhenEnd) this._addUserCheckpoint({ threadId })
 
-		// capture number of messages sent
-		this._metricsService.capture('Agent Loop Done', { nMessagesSent, chatMode })
+		// capture number of messages sent and tool usage summary (non-content)
+		this._metricsService.capture('Agent Loop Done', { nMessagesSent, chatMode, toolCallsRequested, toolCallsExecuted, maxToolCallsPerTurn })
 	}
 
 

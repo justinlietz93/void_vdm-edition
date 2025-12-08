@@ -6,7 +6,7 @@ import { createDecorator } from '../../../../platform/instantiation/common/insta
 import { IWorkspaceContextService } from '../../../../platform/workspace/common/workspace.js';
 import { IEditorService } from '../../../services/editor/common/editorService.js';
 import { ChatMessage } from '../common/chatThreadServiceTypes.js';
-import { getIsReasoningEnabledState, getReservedOutputTokenSpace, getModelCapabilities } from '../common/modelCapabilities.js';
+import { getIsReasoningEnabledState, getReservedOutputTokenSpace, getModelCapabilities, getToolsEnabledForModel } from '../common/modelCapabilities.js';
 import { reParsedToolXMLString, chat_systemMessage } from '../common/prompt/prompts.js';
 import { AnthropicLLMChatMessage, AnthropicReasoning, GeminiLLMChatMessage, LLMChatMessage, LLMFIMMessage, OpenAILLMChatMessage, RawToolParamsObj } from '../common/sendLLMMessageTypes.js';
 import { IVoidSettingsService } from '../common/voidSettingsService.js';
@@ -290,6 +290,8 @@ const prepareOpenAIOrAnthropicMessages = ({
 	supportsAnthropicReasoning,
 	contextWindow,
 	reservedOutputTokenSpace,
+	providerName,
+	debugBudgetRef,
 }: {
 	messages: SimpleLLMMessage[],
 	systemMessage: string,
@@ -299,6 +301,8 @@ const prepareOpenAIOrAnthropicMessages = ({
 	supportsAnthropicReasoning: boolean,
 	contextWindow: number,
 	reservedOutputTokenSpace: number | null | undefined,
+	providerName: ProviderName,
+	debugBudgetRef?: { current?: MessageBudgetingInfo },
 }): { messages: AnthropicOrOpenAILLMMessage[], separateSystemMessage: string | undefined } => {
 
 	reservedOutputTokenSpace = Math.max(
@@ -405,6 +409,40 @@ const prepareOpenAIOrAnthropicMessages = ({
 		remainingCharsToTrim -= numCharsWillTrim
 		m.content = m.content.substring(0, TRIM_TO_LEN - '...'.length) + '...'
 		alreadyTrimmedIdxes.add(trimIdx)
+	}
+
+	// ================ budgeting stats (debug only) ================
+	const totalCharsBeforeTrim = totalLen
+	if (debugBudgetRef) {
+		const totalCharsAfterTrim = messages.reduce((sum, m) => sum + m.content.length, 0)
+		const totalCharsTrimmed = Math.max(totalCharsBeforeTrim - totalCharsAfterTrim, 0)
+
+		let systemChars = 0
+		let userChars = 0
+		let assistantChars = 0
+
+		for (const msg of messages) {
+			const len = msg.content.length
+			if ((msg as any).role === 'system') systemChars += len
+			else if ((msg as any).role === 'user') userChars += len
+			else if ((msg as any).role === 'assistant') assistantChars += len
+		}
+
+		const effectiveInputTokenBudget = Math.max(contextWindow - (reservedOutputTokenSpace ?? 0), 0)
+
+		debugBudgetRef.current = {
+			providerName,
+			contextWindow,
+			reservedOutputTokenSpace: reservedOutputTokenSpace ?? 0,
+			effectiveInputTokenBudget,
+			totalCharsBeforeTrim,
+			totalCharsAfterTrim,
+			totalCharsTrimmed,
+			numMessagesTrimmed: alreadyTrimmedIdxes.size,
+			systemChars,
+			userChars,
+			assistantChars,
+		}
 	}
 
 	// ================ system message hack ================
@@ -536,6 +574,20 @@ const prepareGeminiMessages = (messages: AnthropicLLMChatMessage[]) => {
 }
 
 
+type MessageBudgetingInfo = {
+	providerName: ProviderName;
+	contextWindow: number;
+	reservedOutputTokenSpace: number;
+	effectiveInputTokenBudget: number;
+	totalCharsBeforeTrim: number;
+	totalCharsAfterTrim: number;
+	totalCharsTrimmed: number;
+	numMessagesTrimmed: number;
+	systemChars: number;
+	userChars: number;
+	assistantChars: number;
+}
+
 const prepareMessages = (params: {
 	messages: SimpleLLMMessage[],
 	systemMessage: string,
@@ -545,7 +597,8 @@ const prepareMessages = (params: {
 	supportsAnthropicReasoning: boolean,
 	contextWindow: number,
 	reservedOutputTokenSpace: number | null | undefined,
-	providerName: ProviderName
+	providerName: ProviderName,
+	debugBudgetRef?: { current?: MessageBudgetingInfo },
 }): { messages: LLMChatMessage[], separateSystemMessage: string | undefined } => {
 
 	const specialFormat = params.specialToolFormat // this is just for ts stupidness
@@ -566,8 +619,8 @@ const prepareMessages = (params: {
 
 export interface IConvertToLLMMessageService {
 	readonly _serviceBrand: undefined;
-	prepareLLMSimpleMessages: (opts: { simpleMessages: SimpleLLMMessage[], systemMessage: string, modelSelection: ModelSelection | null, featureName: FeatureName }) => { messages: LLMChatMessage[], separateSystemMessage: string | undefined }
-	prepareLLMChatMessages: (opts: { chatMessages: ChatMessage[], chatMode: ChatMode, modelSelection: ModelSelection | null }) => Promise<{ messages: LLMChatMessage[], separateSystemMessage: string | undefined }>
+	prepareLLMSimpleMessages: (opts: { simpleMessages: SimpleLLMMessage[], systemMessage: string, modelSelection: ModelSelection | null, featureName: FeatureName }) => { messages: LLMChatMessage[], separateSystemMessage: string | undefined, budgetingInfo?: MessageBudgetingInfo }
+	prepareLLMChatMessages: (opts: { chatMessages: ChatMessage[], chatMode: ChatMode, modelSelection: ModelSelection | null }) => Promise<{ messages: LLMChatMessage[], separateSystemMessage: string | undefined, budgetingInfo?: MessageBudgetingInfo }>
 	prepareFIMMessage(opts: { messages: LLMFIMMessage, }): { prefix: string, suffix: string, stopTokens: string[] }
 }
 
@@ -621,7 +674,11 @@ class ConvertToLLMMessageService extends Disposable implements IConvertToLLMMess
 
 
 	// system message
-	private _generateChatMessagesSystemMessage = async (chatMode: ChatMode, specialToolFormat: 'openai-style' | 'anthropic-style' | 'gemini-style' | undefined) => {
+	private _generateChatMessagesSystemMessage = async (
+		chatMode: ChatMode,
+		specialToolFormat: 'openai-style' | 'anthropic-style' | 'gemini-style' | undefined,
+		toolsEnabledForModel: boolean,
+	) => {
 		const workspaceFolders = this.workspaceContextService.getWorkspace().folders.map(f => f.uri.fsPath)
 
 		const openedURIs = this.modelService.getModels().filter(m => m.isAttachedToEditor()).map(m => m.uri.fsPath) || [];
@@ -633,7 +690,12 @@ class ConvertToLLMMessageService extends Disposable implements IConvertToLLMMess
 				: `...Directories string cut off, ask user for more if necessary...`
 		})
 
-		const includeXMLToolDefinitions = !specialToolFormat
+		// Only include XML tool definitions when tools are enabled for the
+		// current model *and* there is no native tool surface selected via
+		// `specialToolFormat`. This keeps native OpenAI/Anthropic/Gemini
+		// tool flows clean while still allowing XML tools for models that do
+		// not expose a structured tool API.
+		const includeXMLToolDefinitions = toolsEnabledForModel && !specialToolFormat
 
 		const mcpTools = this.mcpService.getMCPTools()
 
@@ -724,8 +786,10 @@ class ConvertToLLMMessageService extends Disposable implements IConvertToLLMMess
 			supportsSystemMessage,
 		} = getModelCapabilities(providerName, modelName, overridesOfModel)
 
+		const toolsEnabledForModel = getToolsEnabledForModel(providerName, modelName, overridesOfModel)
+
 		const { disableSystemMessage } = this.voidSettingsService.state.globalSettings;
-		const fullSystemMessage = await this._generateChatMessagesSystemMessage(chatMode, specialToolFormat)
+		const fullSystemMessage = await this._generateChatMessagesSystemMessage(chatMode, specialToolFormat, toolsEnabledForModel)
 		const systemMessage = disableSystemMessage ? '' : fullSystemMessage;
 
 		const modelSelectionOptions = this.voidSettingsService.state.optionsOfModelSelection['Chat'][modelSelection.providerName]?.[modelSelection.modelName]

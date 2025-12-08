@@ -48,7 +48,7 @@ export const sendLLMMessage = async ({
 			...extras,
 		})
 	}
-	const submit_time = new Date()
+	const submitTime = Date.now()
 
 	let _fullTextSoFar = ''
 	let _aborter: (() => void) | null = null
@@ -65,7 +65,13 @@ export const sendLLMMessage = async ({
 	const onFinalMessage: OnFinalMessage = (params) => {
 		const { fullText, fullReasoning, toolCall } = params
 		if (_didAbort) return
-		captureLLMEvent(`${loggingName} - Received Full Message`, { messageLength: fullText.length, reasoningLength: fullReasoning?.length, duration: new Date().getMilliseconds() - submit_time.getMilliseconds(), toolCallName: toolCall?.name })
+		const duration = Date.now() - submitTime
+		captureLLMEvent(`${loggingName} - Received Full Message`, {
+			messageLength: fullText.length,
+			reasoningLength: fullReasoning?.length,
+			duration,
+			toolCallName: toolCall?.name,
+		})
 		onFinalMessage_(params)
 	}
 
@@ -77,13 +83,15 @@ export const sendLLMMessage = async ({
 		if (errorMessage === 'TypeError: fetch failed')
 			errorMessage = `Failed to fetch from ${displayInfoOfProviderName(providerName).title}. This likely means you specified the wrong endpoint in Void's Settings, or your local model provider like Ollama is powered off.`
 
-		captureLLMEvent(`${loggingName} - Error`, { error: errorMessage })
+		const duration = Date.now() - submitTime
+		captureLLMEvent(`${loggingName} - Error`, { error: errorMessage, duration })
 		onError_({ message: errorMessage, fullError })
 	}
 
 	// we should NEVER call onAbort internally, only from the outside
 	const onAbort = () => {
-		captureLLMEvent(`${loggingName} - Abort`, { messageLengthSoFar: _fullTextSoFar.length })
+		const duration = Date.now() - submitTime
+		captureLLMEvent(`${loggingName} - Abort`, { messageLengthSoFar: _fullTextSoFar.length, duration })
 		try { _aborter?.() } // aborter sometimes automatically throws an error
 		catch (e) { }
 		_didAbort = true

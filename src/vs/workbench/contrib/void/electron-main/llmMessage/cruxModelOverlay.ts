@@ -61,6 +61,19 @@ export function buildCruxCapabilitiesOverlayForModels(
 			overlay.reservedOutputTokenSpace = caps['reserved_output_token_space'] as number;
 		}
 
+		// Coarse tool capability flags from Crux. These are consumed by the
+		// IDE to decide whether tools should be enabled for a model and to
+		// enforce a soft per-turn cap on tool invocations.
+		if (caps && typeof caps['tools_supported'] === 'boolean') {
+			overlay.toolsSupported = caps['tools_supported'] as boolean;
+		}
+		if (caps && typeof caps['max_tool_calls_per_turn'] === 'number') {
+			const n = caps['max_tool_calls_per_turn'] as number;
+			if (Number.isFinite(n) && n > 0) {
+				overlay.maxToolCallsPerTurn = n;
+			}
+		}
+
 		// Reasoning capabilities (if Crux provides them). This is a purely
 		// structural mapping of Crux capability fields into the IDE type; all
 		// provider- and model-specific semantics live in Crux.

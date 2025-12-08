@@ -1,5 +1,5 @@
 /*--------------------------------------------------------------------------------------
- *  Copyright 2025 Glass Devtools, Inc. All rights reserved.
+ *  Copyright 2025 Neuroca, Inc. All rights reserved.
  *  Licensed under the Apache License, Version 2.0. See LICENSE.txt for more information.
  *--------------------------------------------------------------------------------------*/
 
@@ -196,9 +196,22 @@ export class RefreshModelService extends Disposable implements IRefreshModelServ
 				autoPoll()
 			},
 			onError: ({ error }) => {
-				console.log('[Void][RefreshModelService] list error', { providerName, error })
-				this._setRefreshState(providerName, 'error', options)
-				autoPoll()
+				// Normalize the error into a concise string for DevTools so that backend
+				// failures (e.g. Crux /api/models issues) are clearly visible instead of
+				// just "[object Object]". This helps distinguish IDE wiring bugs from
+				// provider or Crux health problems.
+				const errorSummary =
+					typeof error === 'string'
+						? error
+						: error instanceof Error
+							? `${error.name}: ${error.message}`
+							: JSON.stringify(error);
+				console.error('[Void][RefreshModelService] list error', {
+					providerName,
+					error: errorSummary,
+				});
+				this._setRefreshState(providerName, 'error', options);
+				autoPoll();
 			}
 		})
 

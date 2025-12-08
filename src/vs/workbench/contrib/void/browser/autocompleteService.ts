@@ -1,3 +1,4 @@
+// TODO Refactor this file to achieve <500 LOC, this will reduce complexity, improve readability and modularity, and organize the code better. Extract code to separate modules into a subdirectory named 'autocomplete' within the same directory as this file.
 /*--------------------------------------------------------------------------------------
  *  Copyright 2025 Glass Devtools, Inc. All rights reserved.
  *  Licensed under the Apache License, Version 2.0. See LICENSE.txt for more information.
@@ -15,6 +16,7 @@ import { isCodeEditor } from '../../../../editor/browser/editorBrowser.js';
 import { EditorResourceAccessor } from '../../../common/editor.js';
 import { IModelService } from '../../../../editor/common/services/model.js';
 import { extractCodeFromRegular } from '../common/helpers/extractCodeFromResult.js';
+import { getModelCapabilities, getIsReasoningEnabledState, getReservedOutputTokenSpace } from '../common/modelCapabilities.js';
 import { registerWorkbenchContribution2, WorkbenchPhase } from '../../../common/contributions.js';
 import { ILLMMessageService } from '../common/sendLLMMessageService.js';
 import { isWindows } from '../../../../base/common/platform.js';
@@ -170,6 +172,10 @@ const DEBOUNCE_TIME = 500
 const TIMEOUT_TIME = 60000
 const MAX_CACHE_SIZE = 20
 const MAX_PENDING_REQUESTS = 2
+
+// Approximate characters-per-token used for budgeting. Must remain in sync
+// with CHARS_PER_TOKEN in [`convertToLLMMessageService.ts`](void_genesis_ide/src/vs/workbench/contrib/void/browser/convertToLLMMessageService.ts:43)
+const FIM_CHARS_PER_TOKEN = 4
 
 // postprocesses the result
 const processStartAndEndSpaces = (result: string) => {
@@ -764,6 +770,55 @@ export class AutocompleteService extends Disposable implements IAutocompleteServ
 
 		if (!shouldGenerate) return []
 
+		// Resolve model selection and ensure the chosen model supports FIM before
+		// issuing a FIMMessage request to the LLM. This keeps Autocomplete aligned
+		// with Crux-backed capabilities and avoids sending unsupported FIM traffic.
+		const featureName: FeatureName = 'Autocomplete'
+		const overridesOfModel = this._settingsService.state.overridesOfModel
+		const modelSelection = this._settingsService.state.modelSelectionOfFeature[featureName]
+		if (!modelSelection) {
+			return []
+		}
+		const { providerName, modelName } = modelSelection
+		const { supportsFIM } = getModelCapabilities(providerName, modelName, overridesOfModel)
+		const fimSupported = !!supportsFIM
+		if (!fimSupported) {
+			return []
+		}
+		const modelSelectionOptions =
+			this._settingsService.state.optionsOfModelSelection[featureName][providerName]?.[modelName]
+
+		// FIM-specific budgeting and telemetry. This uses the same context-window
+		// and reserved-output semantics as chat message budgeting, but only
+		// records non-content statistics (no prompt text) and does not yet gate
+		// requests. Any future hard gating should be driven by observed metrics.
+		const {
+			contextWindow,
+		} = getModelCapabilities(providerName, modelName, overridesOfModel)
+
+		const isReasoningEnabled = getIsReasoningEnabledState(featureName, providerName, modelName, modelSelectionOptions, overridesOfModel)
+		const reservedOutputTokenSpace = getReservedOutputTokenSpace(providerName, modelName, { isReasoningEnabled, overridesOfModel })
+
+		const effectiveInputTokenBudget = Math.max(contextWindow - (reservedOutputTokenSpace ?? 0), 0)
+		const effectiveInputCharBudget = Math.max(effectiveInputTokenBudget * FIM_CHARS_PER_TOKEN, 5_000)
+
+		const fimPrefixChars = llmPrefix.length
+		const fimSuffixChars = llmSuffix.length
+		const totalFIMInputChars = fimPrefixChars + fimSuffixChars
+		const didOverflowBudget = totalFIMInputChars > effectiveInputCharBudget
+
+		const fimBudgetingInfo = {
+			providerName,
+			modelName,
+			contextWindow,
+			reservedOutputTokenSpace: reservedOutputTokenSpace ?? 0,
+			effectiveInputTokenBudget,
+			effectiveInputCharBudget,
+			fimPrefixChars,
+			fimSuffixChars,
+			totalFIMInputChars,
+			didOverflowBudget,
+		}
 		if (testMode && this._autocompletionId !== 0) { // TODO remove this
 			return []
 		}
@@ -789,11 +844,6 @@ export class AutocompleteService extends Disposable implements IAutocompleteServ
 
 		console.log('starting autocomplete...', predictionType)
 
-		const featureName: FeatureName = 'Autocomplete'
-		const overridesOfModel = this._settingsService.state.overridesOfModel
-		const modelSelection = this._settingsService.state.modelSelectionOfFeature[featureName]
-		const modelSelectionOptions = modelSelection ? this._settingsService.state.optionsOfModelSelection[featureName][modelSelection.providerName]?.[modelSelection.modelName] : undefined
-
 		// set parameters of `newAutocompletion` appropriately
 		newAutocompletion.llmPromise = new Promise((resolve, reject) => {
 
@@ -809,7 +859,7 @@ export class AutocompleteService extends Disposable implements IAutocompleteServ
 				modelSelection,
 				modelSelectionOptions,
 				overridesOfModel,
-				logging: { loggingName: 'Autocomplete' },
+				logging: { loggingName: 'Autocomplete', loggingExtras: { fimBudgeting: fimBudgetingInfo } },
 				onText: () => { }, // unused in FIMMessage
 				// onText: async ({ fullText, newText }) => {
 
