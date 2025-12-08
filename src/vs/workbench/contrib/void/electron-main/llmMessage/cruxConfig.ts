@@ -30,8 +30,13 @@ export interface CruxConfig {
  *
  * After that point, all Crux HTTP clients must use `getCruxConfig()`.
  */
+const initialBaseUrl =
+	(process.env.VOID_CRUX_HTTP_BASE_URL ??
+		process.env.CRUX_HTTP_BASE_URL ??
+		'http://127.0.0.1:8091').replace(/\/+$/, '');
+
 let currentConfig: CruxConfig = {
-	baseUrl: 'http://127.0.0.1:8091',
+	baseUrl: initialBaseUrl,
 };
 
 /**

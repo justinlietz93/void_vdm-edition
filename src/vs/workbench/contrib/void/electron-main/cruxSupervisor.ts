@@ -172,6 +172,28 @@ export class CruxSupervisor {
 	}
 
 	private async doStart(): Promise<void> {
+
+		// 1. Honor explicit external Crux base URL when configured.
+		const externalBaseUrl =
+			process.env.VOID_CRUX_HTTP_BASE_URL ??
+			process.env.CRUX_HTTP_BASE_URL ??
+			null;
+
+		if (externalBaseUrl) {
+			const normalized = externalBaseUrl.replace(/\/+$/, '');
+			this.logService.info('[CruxSupervisor] Using external Crux base URL from environment', { baseUrl: normalized });
+
+			if (!(await isCruxHealthy(normalized))) {
+				this.logService.error('[CruxSupervisor] External Crux URL is configured but not healthy', { baseUrl: normalized });
+				throw new Error('[CruxSupervisor] External Crux base URL is configured but /api/health did not return ok=true.');
+			}
+
+			this.baseUrl = normalized;
+			setCruxBaseUrl(normalized);
+			this.logService.info('[CruxSupervisor] Crux is healthy at', normalized);
+			return;
+		}
+
 		const host = this.options.host ?? '127.0.0.1';
 		let port = this.options.port ?? 8091;
 		let baseUrl = `http://${host}:${port}`;

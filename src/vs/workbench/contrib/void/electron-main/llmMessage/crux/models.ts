@@ -19,6 +19,12 @@ export async function cruxGetModelsForProvider(
 		refresh ? 'true' : 'false'
 	}`;
 
+	// Diagnostic logging so we can see exactly which URL the IDE is using for
+	// `/api/models` calls at runtime (e.g. to distinguish 8091 vs 8092 and
+	// confirm that CruxSupervisor / env overrides are taking effect).
+	// This will print into the Electron main-process console.
+	console.log('[CruxBridge] cruxGetModelsForProvider', { provider, refresh, url });
+
 	let response: any;
 	try {
 		response = await fetch(url, { method: 'GET' });

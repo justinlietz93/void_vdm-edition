@@ -15,24 +15,30 @@ import { INLSConfiguration } from './vs/nls.js';
 const require = createRequire(import.meta.url);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-// Install a hook to module resolution to map 'fs' to 'original-fs'
-if (process.env['ELECTRON_RUN_AS_NODE'] || process.versions['electron']) {
-	const jsCode = `
-	export async function resolve(specifier, context, nextResolve) {
-		if (specifier === 'fs') {
-			return {
-				format: 'builtin',
-				shortCircuit: true,
-				url: 'node:original-fs'
-			};
-		}
+ // Install a hook to module resolution to map 'fs' to 'original-fs'.
+ // This can be disabled via VSCODE_DISABLE_FS_LOADER_HOOK=1 to work around
+ // environment-specific ESM/CJS loader issues in certain Node/Electron builds.
+ const shouldInstallFsLoaderHook =
+ 	process.env['VSCODE_DISABLE_FS_LOADER_HOOK'] !== '1' &&
+ 	(process.env['ELECTRON_RUN_AS_NODE'] || process.versions['electron']);
 
-		// Defer to the next hook in the chain, which would be the
-		// Node.js default resolve if this is the last user-specified loader.
-		return nextResolve(specifier, context);
-	}`;
-	register(`data:text/javascript;base64,${Buffer.from(jsCode).toString('base64')}`, import.meta.url);
-}
+ if (shouldInstallFsLoaderHook) {
+ 	const jsCode = `
+ 	export async function resolve(specifier, context, nextResolve) {
+ 		if (specifier === 'fs') {
+ 			return {
+ 				format: 'builtin',
+ 				shortCircuit: true,
+ 				url: 'node:original-fs'
+ 			};
+ 		}
+
+ 		// Defer to the next hook in the chain, which would be the
+ 		// Node.js default resolve if this is the last user-specified loader.
+ 		return nextResolve(specifier, context);
+ 	}`;
+ 	register(`data:text/javascript;base64,${Buffer.from(jsCode).toString('base64')}`, import.meta.url);
+ }
 
 // Prepare globals that are needed for running
 globalThis._VSCODE_PRODUCT_JSON = { ...product };

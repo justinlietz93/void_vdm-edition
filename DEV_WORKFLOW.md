@@ -594,6 +594,11 @@ Several improvements are anticipated (tracked in your TODO/decision logs):
 
 - **Secondary workflow:** Use **direct dev** via [`scripts/code.bat`](void_genesis_ide/scripts/code.bat:1) when the environment is stable, for faster local iteration.
 
+- **When direct dev is unstable (e.g., Node/Electron loader regressions):** Prefer the **builder bundle + external Crux** pattern:
+  - Run Crux from its virtualenv (see [`crux/.venv`](crux:1)) with a fixed port (for example `8092`).
+  - Launch the built IDE from [`void-builder/VSCode-win32-x64/`](void-builder/VSCode-win32-x64:1) with `CRUX_HTTP_BASE_URL` (or `VOID_CRUX_HTTP_BASE_URL`) pointing at that Crux instance (see §10.1).
+  - Treat this as the day-to-day path for validating Void Agent and Crux integration while the dev Electron launcher is under investigation.
+
 - **Source-of-truth discipline:** Never treat [`void-builder/vscode/`](void-builder/vscode:1) as canonical; all permanent edits live in [`void_genesis_ide/`](void_genesis_ide:1).
 
 This document is the baseline for subsequent work on GPT‑5.1 capabilities, tool integration, and agent behavior inside Void Genesis IDE. Any substantial change to the workflows described here should be reflected both in this file, in the `handoff` documentation (especially [`handoff/04_decision_log.md`](handoff/04_decision_log.md:1) and [`handoff/07_environment_spec.md`](handoff/07_environment_spec.md:1)), and in [`CRUX_INTEGRATION.md`](docs/crux_integration/CRUX_INTEGRATION.md:1) when it affects Crux × IDE integration.
