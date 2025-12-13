@@ -1,0 +1,62 @@
+%% C4 Context Diagram for Void Editor
+%% System boundaries and external actors
+%% Last Updated: 2025-11-09
+%% Commit: 7c1f1947e3ea704ba30609c343863d16d5c91185
+
+graph TB
+    %% External Actors
+    Developer[👤 Software Developer<br/>Uses Void for AI-assisted<br/>code development]
+    
+    %% Main System
+    VoidSystem[🎯 Void Editor<br/><br/>AI-powered code editor<br/>with multi-provider LLM integration]
+    
+    %% External Systems
+    OpenAI[🤖 OpenAI API<br/><br/>GPT-4, GPT-3.5, etc.<br/>Chat completions]
+    Anthropic[🤖 Claude API<br/><br/>Claude 3.5 Sonnet, Opus<br/>Message streaming]
+    Mistral[🤖 Mistral AI<br/><br/>Mistral models<br/>Chat API]
+    Gemini[🤖 Google Gemini<br/><br/>Gemini Pro, Ultra<br/>Generative AI]
+    Groq[🤖 Groq API<br/><br/>Fast inference<br/>Chat completions]
+    Ollama[💻 Ollama (Local)<br/><br/>Self-hosted LLMs<br/>Local inference]
+    
+    PostHog[📊 PostHog<br/><br/>Product analytics<br/>Usage telemetry]
+    
+    FileSystem[💾 File System<br/><br/>Workspace files<br/>User code & config]
+    
+    GitHub[🐙 GitHub<br/><br/>Version control<br/>Extensions registry]
+    
+    %% Relationships - Developer interactions
+    Developer -->|Writes code,<br/>asks AI questions,<br/>reviews changes| VoidSystem
+    
+    %% Relationships - System to External Services
+    VoidSystem -->|Sends prompts<br/>& context| OpenAI
+    VoidSystem -->|Sends messages<br/>& streaming requests| Anthropic
+    VoidSystem -->|API requests| Mistral
+    VoidSystem -->|Generative requests| Gemini
+    VoidSystem -->|Fast inference<br/>requests| Groq
+    VoidSystem -->|Local model<br/>inference| Ollama
+    
+    OpenAI -.->|Token streams<br/>responses| VoidSystem
+    Anthropic -.->|Message deltas<br/>responses| VoidSystem
+    Mistral -.->|Chat responses| VoidSystem
+    Gemini -.->|Generated content| VoidSystem
+    Groq -.->|Fast responses| VoidSystem
+    Ollama -.->|Local responses| VoidSystem
+    
+    VoidSystem -->|Sends usage<br/>events| PostHog
+    
+    VoidSystem <-->|Reads/writes<br/>code files| FileSystem
+    
+    VoidSystem -->|Fetches extensions<br/>& updates| GitHub
+    
+    %% Styling
+    classDef systemStyle fill:#4A90E2,stroke:#2E5C8A,stroke-width:3px,color:#fff
+    classDef personStyle fill:#50C878,stroke:#2E7D32,stroke-width:2px,color:#fff
+    classDef externalStyle fill:#FF6B6B,stroke:#C92A2A,stroke-width:2px,color:#fff
+    classDef storageStyle fill:#845EC2,stroke:#5B3F8F,stroke-width:2px,color:#fff
+    classDef llmStyle fill:#FFA500,stroke:#CC8400,stroke-width:2px,color:#fff
+    
+    class VoidSystem systemStyle
+    class Developer personStyle
+    class OpenAI,Anthropic,Mistral,Gemini,Groq,Ollama llmStyle
+    class PostHog,GitHub externalStyle
+    class FileSystem storageStyle

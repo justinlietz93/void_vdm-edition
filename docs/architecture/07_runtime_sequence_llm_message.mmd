@@ -1,0 +1,81 @@
+%% Runtime Sequence: LLM Message Pipeline
+%% User message → LLM provider → Response streaming
+%% Last Updated: 2025-11-09
+
+sequenceDiagram
+    actor User
+    participant UI as Sidebar Pane<br/>(React)
+    participant ChatSvc as Chat Thread<br/>Service
+    participant CtxSvc as Context Gathering<br/>Service
+    participant ConvSvc as Message Converter<br/>Service
+    participant SettingsSvc as Settings<br/>Service
+    participant IPC as IPC Channel
+    participant Main as Electron Main<br/>LLM Comms
+    participant Provider as LLM Provider<br/>(OpenAI/Claude/etc)
+    
+    User->>UI: Types message + Enter
+    activate UI
+    UI->>ChatSvc: sendMessage(threadId, content)
+    activate ChatSvc
+    
+    Note over ChatSvc: Create new message<br/>in thread
+    
+    ChatSvc->>SettingsSvc: getSelectedModel('chat')
+    activate SettingsSvc
+    SettingsSvc-->>ChatSvc: {provider: 'openai', model: 'gpt-4'}
+    deactivate SettingsSvc
+    
+    ChatSvc->>CtxSvc: gatherContext(query, tokenLimit)
+    activate CtxSvc
+    
+    Note over CtxSvc: Scan workspace<br/>Extract symbols<br/>Prioritize files
+    
+    CtxSvc-->>ChatSvc: contextFiles + symbols
+    deactivate CtxSvc
+    
+    ChatSvc->>ConvSvc: convertThread(thread, provider, context)
+    activate ConvSvc
+    
+    Note over ConvSvc: Format messages<br/>Inject context<br/>Add system prompt
+    
+    ConvSvc-->>ChatSvc: providerMessages[]
+    deactivate ConvSvc
+    
+    ChatSvc->>IPC: sendLLMRequest({provider, model, messages})
+    activate IPC
+    
+    IPC->>Main: LLM request event
+    activate Main
+    
+    Main->>Provider: POST /v1/chat/completions<br/>(streaming)
+    activate Provider
+    
+    Note over Provider: Process prompt<br/>Generate tokens
+    
+    Provider-->>Main: Stream: {delta: "token"}
+    Main-->>IPC: Stream: {delta: "token"}
+    IPC-->>ChatSvc: Stream: {delta: "token"}
+    ChatSvc-->>UI: Update message
+    UI-->>User: Display token
+    
+    Provider-->>Main: Stream: {delta: "more"}
+    Main-->>IPC: Stream: {delta: "more"}
+    IPC-->>ChatSvc: Stream: {delta: "more"}
+    ChatSvc-->>UI: Append to message
+    UI-->>User: Display more
+    
+    Provider-->>Main: Stream: {done: true, usage}
+    deactivate Provider
+    Main-->>IPC: Stream complete
+    deactivate Main
+    IPC-->>ChatSvc: Complete event
+    deactivate IPC
+    
+    Note over ChatSvc: Mark message complete<br/>Save to thread
+    
+    ChatSvc-->>UI: Message complete
+    deactivate ChatSvc
+    UI-->>User: Show complete message
+    deactivate UI
+    
+    Note over User,Provider: Total latency: 2-10 seconds<br/>depending on response length

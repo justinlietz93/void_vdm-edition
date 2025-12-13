@@ -1,0 +1,119 @@
+%% Runtime Sequence: Apply (Code Edit) Pipeline
+%% LLM code suggestion → User approval → File write
+%% Last Updated: 2025-11-09
+
+sequenceDiagram
+    actor User
+    participant UI as Sidebar Pane
+    participant EditSvc as Edit Code<br/>Service
+    participant Extract as Extract Code<br/>Helper
+    participant Diff as Find Diffs<br/>Helper
+    participant ModelSvc as Void Model<br/>Service
+    participant Editor as Monaco Editor
+    participant TextModel as Text Model
+    
+    User->>UI: Clicks "Apply" button
+    activate UI
+    
+    UI->>EditSvc: apply(fileUri, llmResponse)
+    activate EditSvc
+    
+    Note over EditSvc: Determine mode:<br/>Fast Apply vs Slow Apply
+    
+    EditSvc->>Extract: extractCodeFromResult(llmResponse)
+    activate Extract
+    
+    alt Fast Apply Mode
+        Note over Extract: Parse search/replace blocks:<br/><<<<<<< ORIGINAL<br/>=======<br/>>>>>>>> UPDATED
+        Extract-->>EditSvc: searchReplaceBlocks[]
+    else Slow Apply Mode
+        Note over Extract: Extract code fence:<br/>```language ... ```
+        Extract-->>EditSvc: fullFileContent
+    end
+    deactivate Extract
+    
+    EditSvc->>ModelSvc: getModel(fileUri)
+    activate ModelSvc
+    ModelSvc-->>EditSvc: textModel
+    deactivate ModelSvc
+    
+    Note over EditSvc: Get current file content
+    
+    EditSvc->>Diff: findDiffs(original, modified)
+    activate Diff
+    
+    Note over Diff: Compute line-by-line<br/>differences using<br/>Myers algorithm
+    
+    Diff-->>EditSvc: diffChanges[]
+    deactivate Diff
+    
+    Note over EditSvc: Create DiffZone:<br/>{startLine, endLine, modelUri}
+    
+    EditSvc->>Editor: createDiffZoneDecoration(diffZone)
+    activate Editor
+    
+    Editor->>TextModel: addDecoration(diffRanges)
+    activate TextModel
+    
+    Note over TextModel: Mark lines as<br/>added (green)<br/>removed (red)
+    
+    TextModel-->>Editor: decorationIds
+    deactivate TextModel
+    Editor-->>EditSvc: Zone rendered
+    deactivate Editor
+    
+    EditSvc-->>UI: Diff preview ready
+    UI-->>User: Shows red/green diff
+    deactivate EditSvc
+    deactivate UI
+    
+    Note over User: Reviews changes<br/>(sees before/after)
+    
+    User->>UI: Clicks "Accept" button
+    activate UI
+    UI->>EditSvc: acceptDiffZone(zoneId)
+    activate EditSvc
+    
+    Note over EditSvc: Apply approved changes
+    
+    alt Fast Apply Mode
+        loop For each search/replace block
+            EditSvc->>ModelSvc: applyEdit(modelUri, searchText, replaceText)
+            activate ModelSvc
+            ModelSvc->>TextModel: replaceText(range, newText)
+            activate TextModel
+            Note over TextModel: Atomic replace<br/>operation
+            TextModel-->>ModelSvc: Success
+            deactivate TextModel
+            ModelSvc-->>EditSvc: Edit applied
+            deactivate ModelSvc
+        end
+    else Slow Apply Mode
+        EditSvc->>ModelSvc: replaceFullContent(modelUri, newContent)
+        activate ModelSvc
+        ModelSvc->>TextModel: setValue(newContent)
+        activate TextModel
+        Note over TextModel: Replace entire<br/>file content
+        TextModel-->>ModelSvc: Success
+        deactivate TextModel
+        ModelSvc-->>EditSvc: Content replaced
+        deactivate ModelSvc
+    end
+    
+    Note over EditSvc: Remove DiffZone<br/>decorations
+    
+    EditSvc->>Editor: removeDecorations(decorationIds)
+    activate Editor
+    Editor->>TextModel: removeDecoration(decorationIds)
+    activate TextModel
+    TextModel-->>Editor: Removed
+    deactivate TextModel
+    Editor-->>EditSvc: Clean
+    deactivate Editor
+    
+    EditSvc-->>UI: Apply complete
+    deactivate EditSvc
+    UI-->>User: Changes applied
+    deactivate UI
+    
+    Note over User,TextModel: File is modified<br/>but not saved<br/>(user saves manually)
